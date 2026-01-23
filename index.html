@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WikiCore</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <style>
+    :root {
+      /* Extracted / matched to logo */
+      --primary: #2f4f8f;
+      --primary-dark: #253f73;
+      --accent: #5b7fd6;
+      --bg: #f6f8fc;
+      --text: #1f2937;
+      --muted: #5f6b7a;
+      --card-bg: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+    }
+
+    /* Header / Hero */
+    .header {
+      text-align: center;
+      margin-bottom: 5rem;
+    }
+
+    .logo {
+      width: 140px;
+      height: auto;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 5vw, 3.4rem);
+      font-weight: 700;
+      color: var(--primary-dark);
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .tagline {
+      max-width: 720px;
+      margin: 0 auto;
+      font-size: 1.1rem;
+      color: var(--muted);
+    }
+
+    /* Features */
+    .features {
+      margin-top: 5rem;
+    }
+
+    .features h2 {
+      text-align: center;
+      font-size: 2rem;
+      margin-bottom: 3rem;
+      color: var(--primary-dark);
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 2.2rem 2rem;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.06);
+      text-align: center;
+    }
+
+	.material-icons {
+	  font-size: 28px;
+	  line-height: 1;
+	}
+
+    .feature-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1.25rem;
+      border-radius: 50%;
+      background: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      color: white;
+    }
+
+    .feature-card h3 {
+      font-size: 1.15rem;
+      margin-bottom: 0.5rem;
+      color: var(--primary-dark);
+    }
+
+    .feature-card p {
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 6rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <header class="header">
+      <!-- Replace src with the actual path to your logo file -->
+      <img src="wikicore_logo_trans.png" alt="WikiCore logo" class="logo" />
+
+      <h1>WikiCore</h1>
+
+      <p class="tagline">
+        WikiCore is an open-source controlled vocabulary built from Wikidata,
+        designed to provide a shared, extensible semantic backbone for
+        classification, indexing, and discovery.
+      </p>
+    </header>
+
+    <section class="features">
+      <!-- <h2>What WikiCore Provides</h2> -->
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">hub</span>
+          </div>
+          <h3>Wikidata-based</h3>
+          <p>
+            Grounded in Wikidata identifiers to ensure global interoperability
+            and stable semantics.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">account_tree</span>
+          </div>
+          <h3>Controlled Vocabulary</h3>
+          <p>
+            A curated, structured vocabulary suitable for metadata,
+            indexing, and subject classification.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">public</span>
+          </div>
+          <h3>Open Source</h3>
+          <p>
+            Openly licensed, community-driven, and designed to evolve
+            transparently over time.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">extension</span>
+          </div>
+          <h3>Modular</h3>
+          <p>
+            Components can be combined, extended, or adapted
+            to different domains and applications.
+          </p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">settings</span>
+          </div>
+          <h3>Tool-Friendly</h3>
+          <p>
+            Intended for integration with automated indexing tools,
+            catalogs, and semantic pipelines.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">
+            <span class="material-icons">translate</span>
+          </div>
+          <h3>Multilingual</h3>
+          <p>
+            Built with native support for multilingual labels and terminology.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      © 2026 WikiCore — Built on Wikidata
+    </footer>
+  </main>
+</body>
+</html>
