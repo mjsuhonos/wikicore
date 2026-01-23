@@ -1,0 +1,11 @@
+PREFIX : <http://example.org/ontology/>
+
+SELECT ?entity
+WHERE {
+  # --- use precomputed child count ---
+  ?entity :childCount ?childCount .
+  
+  # --- use precomputed ancestors ---
+  ?entity :ancestor1 ?a1 .
+}
+GROUP BY ?entity

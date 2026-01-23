@@ -1,0 +1,18 @@
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX : <http://example.org/ontology/>
+
+INSERT {
+  ?entity :ancestor1 ?a1 .
+  ?entity :childCount ?count .
+}
+WHERE {
+  ?entity wdt:P279|wdt:P361 ?a1 .
+  
+  {
+    SELECT ?entity (COUNT(?child) AS ?count)
+    WHERE {
+      ?child wdt:P279|wdt:P361 ?entity .
+    }
+    GROUP BY ?entity
+  }
+}
