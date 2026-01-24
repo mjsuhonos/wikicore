@@ -1,5 +1,7 @@
+# -----------------------
 # Wikicore pipeline Makefile
 # Author: MJ Suhonos <mj@suhonos.ca>
+# -----------------------
 
 SHELL := /bin/zsh
 .SHELLFLAGS := -eu -o pipefail -c
@@ -28,19 +30,26 @@ SKOS_COLLECTION := $(WORK_DIR)/skos_collection.nt
 SKOS_LABELS := $(WORK_DIR)/skos_labels_en.nt
 FINAL_TURTLE := $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
 
+# -----------------------
 # Default target
 all: $(FINAL_TURTLE)
 
+# -----------------------
 # Ensure directories exist
+# -----------------------
 $(NT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(OUTPUT_DIR):
 	mkdir -p $@
 
+# -----------------------
 # Step 1: Extract core properties
+# -----------------------
 $(CORE_PROPS_NT): $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz | $(WORK_DIR)
 	@echo "Extracting P31 / P279 / P361…"
 	gzcat $< | rg '/prop/direct/(P31|P279|P361)>' > $@
 
+# -----------------------
 # Step 2: Split by P31 class vs backbone
+# -----------------------
 $(NT_DIR)/partition.done: $(CORE_PROPS_NT) | $(NT_DIR)
 	@echo "Partitioning P31 statements…"
 	mawk -v OFS=' ' -v CLASS_NAMES_FILE="$(CLASS_NAMES_FILE)" -v OUT_DIR="$(NT_DIR)" \
@@ -71,19 +80,25 @@ $(NT_DIR)/partition.done: $(CORE_PROPS_NT) | $(NT_DIR)
 $(P31_SUBJECTS): $(PARTITION_DONE)
 	@:
 
+# -----------------------
 # Step 3: Extract subject vocabularies
+# -----------------------
 SUBJECT_FILES := $(patsubst $(NT_DIR)/%.nt,$(SUBJECTS_DIR)/%.subjects.tsv,$(wildcard $(NT_DIR)/Q*_instances.nt))
 $(SUBJECTS_DIR)/%.subjects.tsv: $(NT_DIR)/%.nt | $(SUBJECTS_DIR)
 	@echo "Extracting unique subjects for $<"
 	$(ROOT_DIR)/extract_unique_subjects.sh $< $@
 
+# -----------------------
 # Step 4: Load backbone into Jena
+# -----------------------
 $(JENA_DIR)/tdb_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 	@echo "Loading backbone into Jena…"
 	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
 	touch $@
 
+# -----------------------
 # Step 5: Materialize + export core concepts
+# -----------------------
 $(CORE_CONCEPTS_RAW): $(JENA_DIR)/tdb_loaded | $(WORK_DIR)
 	@echo "Materializing graph and exporting core concepts…"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_graph.rq"
@@ -91,12 +106,16 @@ $(CORE_CONCEPTS_RAW): $(JENA_DIR)/tdb_loaded | $(WORK_DIR)
 		> $@
 	@rg '<http://www.wikidata.org/entity/' $@ | sort > $(CORE_CONCEPTS_QIDS)
 
+# -----------------------
 # Step 6: Remove P31 instances from core concepts
+# -----------------------
 $(P31_NONCORE_QIDS): $(SUBJECT_FILES) $(CORE_CONCEPTS_QIDS)
 	@echo "Filtering out instances…"
 	cat $(SUBJECTS_DIR)/*.subjects.tsv | sort -u | join -v 1 $(CORE_CONCEPTS_QIDS) - > $@
 
+# -----------------------
 # Step 7: Generate SKOS triples
+# -----------------------
 $(SKOS_CONCEPTS): $(P31_NONCORE_QIDS)
 	@echo "Generating SKOS triples…"
 	sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .|' \
@@ -113,7 +132,9 @@ $(SKOS_LABELS): $(P31_NONCORE_QIDS) $(SOURCE_DIR)/wikidata-20251229-skos-labels-
 	@echo "Extracting SKOS labels…"
 	gzcat $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz | join - $< > $@
 
+# -----------------------
 # Step 8: Export Turtle
+# -----------------------
 $(FINAL_TURTLE): $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS) | $(OUTPUT_DIR)
 	@echo "Writing Turtle output…"
 	cat $(WORK_DIR)/skos_*.nt | rapper -i ntriples -o turtle - -I 'http://www.wikidata.org/entity/' > $@
