@@ -19,11 +19,12 @@ NT_DIR="$WORK_DIR/nt"
 JENA_DIR="$WORK_DIR/jena"
 SUBJECTS_DIR="$WORK_DIR/subjects"
 QUERIES_DIR="$ROOT_DIR/queries"
+SKOS_DIR="$WORK_DIR/skos"
 
 RUN_DATE=$(date +%Y%m%d)
 COLLECTION_URI="https://wikicore.ca/$RUN_DATE"
 
-mkdir -p "$NT_DIR" "$SUBJECTS_DIR" "$JENA_DIR" "$OUTPUT_DIR"
+mkdir -p "$NT_DIR" "$SUBJECTS_DIR" "$JENA_DIR" "$SKOS_DIR" "$OUTPUT_DIR"
 
 # -----------------------
 # 1. Extract core properties
@@ -95,9 +96,9 @@ echo "Materializing graph and exporting core concepts…"
 tdb2.tdbupdate --loc "$JENA_DIR" --update="$QUERIES_DIR/materialize_graph.rq"
 
 tdb2.tdbquery --loc "$JENA_DIR" --query="$QUERIES_DIR/export.rq" --results=TSV \
-  > "$OUTPUT_DIR/core_concepts_raw.tsv"
+  > "$WORK_DIR/core_concepts_raw.tsv"
 
-rg '<http://www.wikidata.org/entity/' "$OUTPUT_DIR/core_concepts_raw.tsv" \
+rg '<http://www.wikidata.org/entity/' "$WORK_DIR/core_concepts_raw.tsv" \
   | sort \
   > "$WORK_DIR/core_concepts_qids.tsv"
 
@@ -106,9 +107,7 @@ rg '<http://www.wikidata.org/entity/' "$OUTPUT_DIR/core_concepts_raw.tsv" \
 # -----------------------
 echo "Filtering out instances…"
 
-# FIXME: save to a file
-cat "$SUBJECTS_DIR"/*.subjects.tsv \
-  | sort -u \
+sort -m "$SUBJECTS_DIR"/*.subjects.tsv \
   | join -v 1 "$WORK_DIR/core_concepts_qids.tsv" - \
   > "$WORK_DIR/p31_noncore_qids.tsv"
 
@@ -119,24 +118,24 @@ echo "Generating SKOS triples…"
 
 sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .|' \
   "$WORK_DIR/p31_noncore_qids.tsv" \
-  > "$WORK_DIR/skos_concepts.nt"
+  > "$SKOS_DIR/skos_concepts.nt"
 
 {
   echo "<$COLLECTION_URI> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Collection> ."
   sed -E "s|(.*)|<$COLLECTION_URI> <http://www.w3.org/2004/02/skos/core#member> \1 .|" \
       "$WORK_DIR/p31_noncore_qids.tsv"
-} > "$WORK_DIR/skos_collection.nt"
+} > "$SKOS_DIR/skos_collection.nt"
 
 gzcat "$SOURCE_DIR/wikidata-20251229-skos-labels-en.nt.gz" \
   | join - "$WORK_DIR/p31_noncore_qids.tsv" \
-  > "$WORK_DIR/skos_labels_en.nt"
+  > "$SKOS_DIR/skos_labels_en.nt"
 
 # -----------------------
 # 8. Export Turtle
 # -----------------------
 echo "Writing Turtle output…"
 
-cat "$WORK_DIR"/skos_*.nt \
+cat "$SKOS_DIR"/skos_*.nt \
   | rapper -i ntriples -o turtle - -I 'http://www.wikidata.org/entity/' \
   > "$OUTPUT_DIR/wikicore-$RUN_DATE.ttl"
 
