@@ -26,8 +26,8 @@ FINAL_SORT_RAM_GB=$(( TOTAL_RAM_GB - CHUNK_RAM_GB * CPU_CORES ))
 [[ $CHUNK_RAM_GB -le 1 ]] && CHUNK_RAM_GB=1
 
 echo "Processing $INPUT_FILE with $CPU_CORES cores..."
-echo "Chunk RAM per parallel task: ${CHUNK_RAM_GB}G"
-echo "Final sort RAM: ${FINAL_SORT_RAM_GB}G"
+#echo "Chunk RAM per parallel task: ${CHUNK_RAM_GB}G"
+#echo "Final sort RAM: ${FINAL_SORT_RAM_GB}G"
 
 # Build the pipeline
 PIPELINE="parallel --pipepart -a \"$INPUT_FILE\" -j $CPU_CORES \"awk '{print \\\$1}' | sort -u -S ${CHUNK_RAM_GB}G\" | sort -u -S ${FINAL_SORT_RAM_GB}G --parallel=$CPU_CORES"
