@@ -1,11 +1,13 @@
 # -----------------------
-# Wikidata processing pipeline (Makefile version)
-# Fully parallel, uses external AWK for section 2
+# Wikidata processing pipeline (Makefile)
 # -----------------------
-SHELL := /bin/zsh
-.PHONY: all clean process_chunks subjects_sorted cleanup_tmp
 
-# Directories
+SHELL := /bin/zsh
+.PHONY: all clean
+
+# -----------------------
+# Paths
+# -----------------------
 ROOT_DIR := $(PWD)
 SOURCE_DIR := $(ROOT_DIR)/source.nosync
 WORK_DIR := $(ROOT_DIR)/working.nosync
@@ -18,20 +20,46 @@ TMP_DIR := $(WORK_DIR)/tmp_outputs
 SPLIT_DIR := $(WORK_DIR)/splits
 QUERIES_DIR := $(ROOT_DIR)/queries
 
-# Files
+CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
+
+export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$$(nproc)"
+
 RUN_DATE := $(shell date +%Y%m%d)
 COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
+
+# -----------------------
+# Inputs
+# -----------------------
+PROP_DIRECT_GZ := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
+SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
+
+# -----------------------
+# Core files
+# -----------------------
 CORE_PROPS_NT := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
 CORE_CONCEPTS_RAW := $(WORK_DIR)/core_concepts_raw.tsv
 CORE_CONCEPTS_QIDS := $(WORK_DIR)/core_concepts_qids.tsv
 P31_NONCORE_QIDS := $(WORK_DIR)/p31_noncore_qids.tsv
-CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 
+# -----------------------
 # SKOS outputs
+# -----------------------
 SKOS_CONCEPTS := $(SKOS_DIR)/skos_concepts.nt
 SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
 SKOS_LABELS := $(SKOS_DIR)/skos_labels_en.nt
 SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+
+# -----------------------
+# Stamp files
+# -----------------------
+EXTRACT_DONE := $(WORK_DIR)/extract.done
+SPLIT_DONE := $(SPLIT_DIR)/split.done
+PARTITION_DONE := $(WORK_DIR)/partition.done
+SUBJECTS_SORTED_DONE := $(WORK_DIR)/subjects_sorted.done
+JENA_DONE := $(JENA_DIR)/jena.done
+CORE_CONCEPTS_DONE := $(WORK_DIR)/core_concepts.done
+FILTER_DONE := $(WORK_DIR)/filter.done
+SKOS_DONE := $(WORK_DIR)/skos.done
 
 # -----------------------
 # Default target
@@ -39,109 +67,161 @@ SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
 all: $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
 
 # -----------------------
-# Step 1: Extract core properties
+# 1. Extract core properties
 # -----------------------
-$(CORE_PROPS_NT): $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
+$(EXTRACT_DONE): $(PROP_DIRECT_GZ)
 	mkdir -p $(WORK_DIR)
 	pigz -dc $< \
-		| rg -F \
-			-e '/prop/direct/P31>' \
-			-e '/prop/direct/P279>' \
-			-e '/prop/direct/P361>' \
-		> $@
-
+	  | rg -F \
+	      -e '/prop/direct/P31>' \
+	      -e '/prop/direct/P279>' \
+	      -e '/prop/direct/P361>' \
+	  > $(CORE_PROPS_NT)
+	touch $@
 
 # -----------------------
-# Step 2: Split & process chunks
+# 2a. Split into chunks
 # -----------------------
-$(SPLIT_DIR)/.done: $(CORE_PROPS_NT)
+$(SPLIT_DONE): $(EXTRACT_DONE)
 	mkdir -p $(SPLIT_DIR)
-	echo "Splitting $(CORE_PROPS_NT) into chunks…"
+	echo "Splitting core properties into chunks…"
 	gsplit -n l/$$(nproc) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	touch $@
 
-$(WORK_DIR)/process_chunks.done: $(SPLIT_DIR)/.done
+# -----------------------
+# 2b. Partition chunks (parallel)
+# -----------------------
+$(PARTITION_DONE): $(SPLIT_DONE)
 	mkdir -p $(TMP_DIR) $(SUBJECTS_DIR)
-	echo "Processing chunks in parallel…"
+	echo "Partitioning chunks in parallel…"
 	ls $(SPLIT_DIR)/chunk_* | \
-	parallel -j $$(nproc) \
-	         --joblog $(WORK_DIR)/partitioning.log \
-	         --eta \
-	         --halt now,fail=1 \
-	         'echo "[{#}] Processing {}"; \
-	         'gawk -v OFS=" " \
-	               -v CLASS_NAMES_FILE="$(CLASS_NAMES_FILE)" \
-	               -v TMP_DIR="$(TMP_DIR)" \
-	               -v SUBJECTS_DIR="$(SUBJECTS_DIR)" \
-	               -f partition_chunks.awk {}'
+	  parallel -j $$(nproc) \
+	           --eta \
+	           --halt now,fail=1 \
+	           'echo "[{#}] Processing {}"; \
+	            python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(TMP_DIR) $(SUBJECTS_DIR)'
 	touch $@
 
 
-# Merge per-chunk temp outputs into final NT files
-$(NT_DIR)/merged_instances.nt: process_chunks
-	mkdir -p $(NT_DIR)
-	cat $(TMP_DIR)/*_instances.nt > $@
-
-$(NT_DIR)/concept_backbone.nt: $(WORK_DIR)/process_chunks.done
-	mkdir -p $(NT_DIR)
-	cat $(TMP_DIR)/concept_backbone.nt > $@
-
-# Optional cleanup
-cleanup_tmp:
-	rm -rf $(TMP_DIR) $(SPLIT_DIR)
-
 # -----------------------
-# Step 3: Sort subject vocabularies
+# 3. Sort subject vocabularies
 # -----------------------
-subjects_sorted: $(SUBJECTS_DIR)/*.subjects.tsv
-	printf '%s\0' $^ | xargs -0 -P $(nproc) sh -c 'LC_ALL=C sort -u $$1 -o $$1' _
+$(SUBJECTS_SORTED_DONE): $(PARTITION_DONE)
+	@echo "Sorting and deduplicating subject vocabularies…"
+	# Use null-delimited list for safety with spaces in filenames
+	find $(SUBJECTS_DIR) -name '*.subjects.tsv' -print0 \
+	  | xargs -0 -n 1 -P $$(nproc) \
+	      sh -c 'echo "Sorting $$1…"; LC_ALL=C sort -u "$$1" -o "$$1"' _
+	touch $@
+
 
 # -----------------------
-# Step 4: Load backbone into Jena
+# 4. Load backbone into Jena
 # -----------------------
-$(JENA_DIR)/tdb_ready: $(NT_DIR)/concept_backbone.nt
+$(JENA_DONE): $(PARTITION_DONE)
 	mkdir -p $(JENA_DIR)
-	export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$$(nproc)"
-	tdb2.tdbloader --loc $(JENA_DIR) $<
+	tdb2.tdbloader --loc $(JENA_DIR) $(TMP_DIR)/concept_backbone.nt
 	touch $@
 
 # -----------------------
-# Step 5: Materialize + export core concepts
+# 5. Materialize + export core concepts
 # -----------------------
-$(CORE_CONCEPTS_RAW): $(JENA_DIR)/tdb_ready
+$(CORE_CONCEPTS_DONE): $(JENA_DONE)
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_graph.rq"
-	tdb2.tdbquery --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV > $@
-
-$(CORE_CONCEPTS_QIDS): $(CORE_CONCEPTS_RAW)
-	grep -F '<http://www.wikidata.org/entity/' $< | LC_ALL=C sort --parallel=$(shell nproc) -u > $@
-
-# -----------------------
-# Step 6: Remove P31 instances from core concepts
-# -----------------------
-$(P31_NONCORE_QIDS): $(CORE_CONCEPTS_QIDS) subjects_sorted
-	LC_ALL=C sort -m $(SUBJECTS_DIR)/*.subjects.tsv | join -v 1 $(CORE_CONCEPTS_QIDS) - > $@
+	tdb2.tdbquery --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
+	  > $(CORE_CONCEPTS_RAW)
+	grep -F '<http://www.wikidata.org/entity/' $(CORE_CONCEPTS_RAW) \
+	  | LC_ALL=C sort --parallel=$$(nproc) -u \
+	  > $(CORE_CONCEPTS_QIDS)
+	touch $@
 
 # -----------------------
-# Step 7: Generate SKOS triples
+# 6. Remove P31 instances from core concepts
 # -----------------------
-$(SKOS_CONCEPTS): $(P31_NONCORE_QIDS)
+$(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
+	@echo "Filtering out P31 instances from core concepts…"
+	LC_ALL=C sort -m $(SUBJECTS_DIR)/*.subjects.tsv \
+	  | join --check-order -v 1 $(CORE_CONCEPTS_QIDS) - \
+	  > $(P31_NONCORE_QIDS)
+	touch $@
+
+
+# -----------------------
+# 7. Generate SKOS triples (parallel substeps)
+# -----------------------
+
+SKOS_CONCEPTS := $(SKOS_DIR)/skos_concepts.nt
+SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
+SKOS_LABELS := $(SKOS_DIR)/skos_labels_en.nt
+SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+
+# --- 7a. skos:Concept typing
+$(SKOS_CONCEPTS): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .|' $< > $@
+	sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .|' \
+	  $(P31_NONCORE_QIDS) \
+	  > $@
 
-$(SKOS_COLLECTION): $(P31_NONCORE_QIDS)
+# --- 7b. skos:Collection + members
+$(SKOS_COLLECTION): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	{ echo "<$(COLLECTION_URI)> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Collection> ."; \
-	  sed -E "s|(.*)|<$(COLLECTION_URI)> <http://www.w3.org/2004/02/skos/core#member> \1 .|" $<; } > $@
+	{ \
+	  echo "<$(COLLECTION_URI)> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Collection> ."; \
+	  sed -E "s|(.*)|<$(COLLECTION_URI)> <http://www.w3.org/2004/02/skos/core#member> \1 .|" \
+	    $(P31_NONCORE_QIDS); \
+	} > $@
 
-$(SKOS_LABELS): $(P31_NONCORE_QIDS) $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
-	pigz -dc $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz | join - $(P31_NONCORE_QIDS) > $@
+# --- 7c. English labels (join)
+$(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
+	mkdir -p $(SKOS_DIR)
+	pigz -dc $(SKOS_LABELS_GZ) \
+	  | join - $(P31_NONCORE_QIDS) \
+	  > $@
+
+# --- 7d. Stamp (fan-in)
+$(SKOS_DONE): $(SKOS_NT)
+	touch $@
 
 # -----------------------
-# Step 8: Export Turtle
+# 8. Export Turtle (parallel fan-out)
 # -----------------------
-$(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl: $(SKOS_NT)
+
+TTL_CONCEPTS := $(OUTPUT_DIR)/skos_concepts.ttl
+TTL_COLLECTION := $(OUTPUT_DIR)/skos_collection.ttl
+TTL_LABELS := $(OUTPUT_DIR)/skos_labels_en.ttl
+TTL_PARTS := $(TTL_CONCEPTS) $(TTL_COLLECTION) $(TTL_LABELS)
+
+FINAL_TTL := $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
+
+# --- 8a. Concepts
+$(TTL_CONCEPTS): $(SKOS_CONCEPTS)
 	mkdir -p $(OUTPUT_DIR)
-	riot --syntax=ntriples --output=turtle --base='http://www.wikidata.org/entity/' $^
+	riot --syntax=ntriples --output=turtle \
+	     --base='http://www.wikidata.org/entity/' \
+	     $< > $@
+
+# --- 8b. Collection
+$(TTL_COLLECTION): $(SKOS_COLLECTION)
+	mkdir -p $(OUTPUT_DIR)
+	riot --syntax=ntriples --output=turtle \
+	     --base='http://www.wikidata.org/entity/' \
+	     $< > $@
+
+# --- 8c. Labels
+$(TTL_LABELS): $(SKOS_LABELS)
+	mkdir -p $(OUTPUT_DIR)
+	riot --syntax=ntriples --output=turtle \
+	     --base='http://www.wikidata.org/entity/' \
+	     $< > $@
+
+# --- 8d. Fan-in merge
+$(FINAL_TTL): $(TTL_PARTS)
+	cat $(TTL_PARTS) \
+	  | LC_ALL=C sort \
+	  > $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
+	# Move final TTL to ROOT_DIR
+	mv $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl $(ROOT_DIR)/wikicore-$(RUN_DATE).ttl
+
 
 # -----------------------
 # Clean

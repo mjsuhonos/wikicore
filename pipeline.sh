@@ -33,8 +33,11 @@ echo "Extracting P31 / P279 / P361…"
 
 CORE_PROPS_NT="$WORK_DIR/wikidata-core-props-P31-P279-P361.nt"
 
-gzcat "$SOURCE_DIR/wikidata-20251229-propdirect.nt.gz" \
-  | rg '/prop/direct/(P31|P279|P361)>' \
+pigz -dc "$SOURCE_DIR/wikidata-20251229-propdirect.nt.gz" \
+  | rg -F \
+      -e '/prop/direct/P31>' \
+      -e '/prop/direct/P279>' \
+      -e '/prop/direct/P361>' \
   > "$CORE_PROPS_NT"
 
 # -----------------------
@@ -42,7 +45,17 @@ gzcat "$SOURCE_DIR/wikidata-20251229-propdirect.nt.gz" \
 # -----------------------
 echo "Partitioning P31 statements…"
 
-mawk -v OFS=' ' -v CLASS_NAMES_FILE="$CLASS_NAMES_FILE" -v OUT_DIR="$NT_DIR" '
+SPLIT_DIR="$WORK_DIR/splits"
+mkdir -p "$SPLIT_DIR"
+
+gsplit -n l/$(nproc) "$CORE_PROPS_NT" "$SPLIT_DIR/chunk_"
+
+printf '%s\0' "$SPLIT_DIR"/chunk_* \
+| xargs -0 -P "$(nproc)" gawk \
+  -v OFS=' ' \
+  -v CLASS_NAMES_FILE="$CLASS_NAMES_FILE" \
+  -v OUT_DIR="$NT_DIR" \
+  -v SUBJECTS_DIR="$SUBJECTS_DIR" '
 function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
 
 BEGIN {
@@ -55,6 +68,7 @@ BEGIN {
     subj=$1; pred=$2; obj=$3
     gsub(/[<>]/,"",subj); gsub(/[<>]/,"",pred); gsub(/[<>]/,"",obj)
 
+    # Route triples
     if (pred ~ /prop\/direct\/P31$/) {
         qid = obj
         sub(".*/","",qid)
@@ -62,44 +76,72 @@ BEGIN {
             out_file = OUT_DIR "/" qid "_" class_names[qid] "_instances.nt"
         else
             out_file = OUT_DIR "/P31_other_instances.nt"
+
+        # Collect subjects for instance files
+        subjects[out_file][subj] = 1
     } else {
         out_file = OUT_DIR "/concept_backbone.nt"
     }
 
-    print $0 >> out_file
-    open[out_file] = 1
+    buf[out_file] = buf[out_file] $0 "\n"
+    cnt[out_file]++
+
+    if (cnt[out_file] >= 10000) {
+        printf "%s", buf[out_file] >> out_file
+        buf[out_file] = ""
+        cnt[out_file] = 0
+    }
 }
 
 END {
-    for (f in open) close(f)
+    # Flush triple buffers
+    for (f in buf)
+        if (buf[f] != "")
+            printf "%s", buf[f] >> f
+
+    # Emit subject vocabularies (unsorted)
+    for (f in subjects) {
+        sub(/.*\//, "", f)
+        sub(/\.nt$/, "", f)
+        subj_file = SUBJECTS_DIR "/" f ".subjects.tsv"
+        for (s in subjects[f])
+            print s >> subj_file
+    }
 }
-' "$CORE_PROPS_NT"
+'
+
+rm -rf "$SPLIT_DIR"
 
 # -----------------------
-# 3. Extract subject vocabularies
+# 3. Sort subject vocabularies
 # -----------------------
-echo "Extracting unique subjects…"
-for f in "$NT_DIR"/Q*_instances.nt; do
-    "$ROOT_DIR/extract_unique_subjects.sh" "$f" "$SUBJECTS_DIR/$(basename "${f%.nt}.subjects.tsv")"
-done
+echo "Sorting subject vocabularies…"
+
+printf '%s\0' "$SUBJECTS_DIR"/*.subjects.tsv \
+| xargs -0 -P "$(nproc)" \
+    sh -c 'LC_ALL=C sort -u "$1" -o "$1"' _
 
 # -----------------------
 # 4. Load backbone into Jena
 # -----------------------
 echo "Loading backbone into Jena…"
+
+export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(nproc)"
+
 tdb2.tdbloader --loc "$JENA_DIR" "$NT_DIR/concept_backbone.nt"
 
 # -----------------------
 # 5. Materialize + export core concepts
 # -----------------------
 echo "Materializing graph and exporting core concepts…"
+
 tdb2.tdbupdate --loc "$JENA_DIR" --update="$QUERIES_DIR/materialize_graph.rq"
 
 tdb2.tdbquery --loc "$JENA_DIR" --query="$QUERIES_DIR/export.rq" --results=TSV \
   > "$WORK_DIR/core_concepts_raw.tsv"
 
-rg '<http://www.wikidata.org/entity/' "$WORK_DIR/core_concepts_raw.tsv" \
-  | sort \
+grep -F '<http://www.wikidata.org/entity/' "$WORK_DIR/core_concepts_raw.tsv" \
+  | LC_ALL=C sort \
   > "$WORK_DIR/core_concepts_qids.tsv"
 
 # -----------------------
@@ -107,7 +149,7 @@ rg '<http://www.wikidata.org/entity/' "$WORK_DIR/core_concepts_raw.tsv" \
 # -----------------------
 echo "Filtering out instances…"
 
-sort -m "$SUBJECTS_DIR"/*.subjects.tsv \
+LC_ALL=C sort -m "$SUBJECTS_DIR"/*.subjects.tsv \
   | join -v 1 "$WORK_DIR/core_concepts_qids.tsv" - \
   > "$WORK_DIR/p31_noncore_qids.tsv"
 
@@ -126,7 +168,7 @@ sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.
       "$WORK_DIR/p31_noncore_qids.tsv"
 } > "$SKOS_DIR/skos_collection.nt"
 
-gzcat "$SOURCE_DIR/wikidata-20251229-skos-labels-en.nt.gz" \
+pigz -dc "$SOURCE_DIR/wikidata-20251229-skos-labels-en.nt.gz" \
   | join - "$WORK_DIR/p31_noncore_qids.tsv" \
   > "$SKOS_DIR/skos_labels_en.nt"
 
@@ -135,8 +177,9 @@ gzcat "$SOURCE_DIR/wikidata-20251229-skos-labels-en.nt.gz" \
 # -----------------------
 echo "Writing Turtle output…"
 
-cat "$SKOS_DIR"/skos_*.nt \
-  | rapper -i ntriples -o turtle - -I 'http://www.wikidata.org/entity/' \
+riot --syntax=ntriples --output=turtle \
+     --base='http://www.wikidata.org/entity/' \
+     "$SKOS_DIR"/skos_*.nt \
   > "$OUTPUT_DIR/wikicore-$RUN_DATE.ttl"
 
 echo "Done → $OUTPUT_DIR/wikicore-$RUN_DATE.ttl"
