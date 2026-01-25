@@ -188,43 +188,6 @@ $(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
 	touch $@
 
 # =========================================================
-# Subject-specific SKOS export
-# Usage: make skos_subject SUBJECT=Q5
-# =========================================================
-
-SUBJECT          ?=
-SUBJECT_FILE      = $(SUBJECTS_DIR)/$(SUBJECT)_subjects.tsv
-SUBJECT_URI       = http://www.wikidata.org/entity/$(SUBJECT)
-SUBJECT_COL_URI   = https://wikicore.ca/subject/$(SUBJECT)
-SUBJECT_OUT       = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(SUBJECT).ttl
-
-.PHONY: skos_subject check_subject
-
-skos_subject: check_subject $(SUBJECT_OUT)
-	@echo "→ $(SUBJECT_OUT)"
-
-check_subject:
-	@if [ -z "$(SUBJECT)" ]; then \
-	  echo "ERROR: SUBJECT=QID required (e.g. make skos_subject SUBJECT=Q5)"; \
-	  exit 1; \
-	fi
-	@if [ ! -f "$(SUBJECT_FILE)" ]; then \
-	  echo "ERROR: Subject file $(SUBJECT_FILE) does not exist"; \
-	  exit 1; \
-	fi
-
-$(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
-	@echo "Generating SKOS for subject $(SUBJECT)…"
-	@mkdir -p $(ROOT_DIR)
-	@{ \
-	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
-	  $(call emit_skos_collection,$(SUBJECT_COL_URI),$(SUBJECT_FILE)); \
-	  grep -F "<$(SUBJECT_URI)>" $(SKOS_LABELS) || true; \
-	} | riot --syntax=ntriples --output=turtle \
-	         --base='http://www.wikidata.org/entity/' \
-	> $@
-
-# =========================================================
 # 7. Generate SKOS triples (batch pipeline)
 # =========================================================
 
@@ -268,3 +231,40 @@ $(FINAL_TTL): $(SKOS_NT)
 # -----------------------
 clean:
 	rm -rf $(WORK_DIR)
+
+# =========================================================
+# Subject-specific SKOS export
+# Usage: make skos_subject SUBJECT=Q5
+# =========================================================
+
+SUBJECT          ?=
+SUBJECT_FILE      = $(SUBJECTS_DIR)/$(SUBJECT)_subjects.tsv
+SUBJECT_URI       = http://www.wikidata.org/entity/$(SUBJECT)
+SUBJECT_COL_URI   = $(COLLECTION_URI)/subject/$(SUBJECT)
+SUBJECT_OUT       = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(SUBJECT).ttl
+
+.PHONY: skos_subject check_subject
+
+skos_subject: check_subject $(SUBJECT_OUT)
+	@echo "→ $(SUBJECT_OUT)"
+
+check_subject:
+	@if [ -z "$(SUBJECT)" ]; then \
+	  echo "ERROR: SUBJECT=QID required (e.g. make skos_subject SUBJECT=Q5)"; \
+	  exit 1; \
+	fi
+	@if [ ! -f "$(SUBJECT_FILE)" ]; then \
+	  echo "ERROR: Subject file $(SUBJECT_FILE) does not exist"; \
+	  exit 1; \
+	fi
+
+$(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
+	@echo "Generating SKOS for subject $(SUBJECT)…"
+	@mkdir -p $(ROOT_DIR)
+	@{ \
+	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
+	  $(call emit_skos_collection,$(SUBJECT_COL_URI),$(SUBJECT_FILE)); \
+	  grep -F "<$(SUBJECT_URI)>" $(SKOS_LABELS) || true; \
+	} | riot --syntax=ntriples --output=turtle \
+	         --base='http://www.wikidata.org/entity/' \
+	> $@
