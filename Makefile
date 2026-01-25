@@ -44,10 +44,16 @@ CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
 # -----------------------
 # SKOS outputs
 # -----------------------
-SKOS_CONCEPTS := $(SKOS_DIR)/skos_concepts.nt
+SKOS_CONCEPTS   := $(SKOS_DIR)/skos_concepts.nt
 SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
-SKOS_LABELS := $(SKOS_DIR)/skos_labels_en.nt
-SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+SKOS_LABELS     := $(SKOS_DIR)/skos_labels_en.nt
+SKOS_BROADER    := $(SKOS_DIR)/skos_broader.nt
+
+SKOS_NT := \
+	$(SKOS_CONCEPTS) \
+	$(SKOS_COLLECTION) \
+	$(SKOS_LABELS) \
+	$(SKOS_BROADER)
 
 # -----------------------
 # Stamp files
@@ -60,6 +66,38 @@ JENA_DONE := $(JENA_DIR)/jena.done
 CORE_CONCEPTS_DONE := $(WORK_DIR)/core_concepts.done
 FILTER_DONE := $(WORK_DIR)/filter.done
 SKOS_DONE := $(WORK_DIR)/skos.done
+
+# =========================================================
+# Shared RDF / SKOS constants
+# =========================================================
+
+RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
+SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
+SKOS_COLLECTION_URI = http://www.w3.org/2004/02/skos/core\#Collection
+SKOS_MEMBER_URI     = http://www.w3.org/2004/02/skos/core\#member
+SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
+
+# =========================================================
+# Shared SKOS emitters (macros)
+# =========================================================
+
+# Emit: <QID> rdf:type skos:Concept .
+# $(1) = file containing <QID> IRIs (one per line)
+define emit_skos_concepts
+sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
+endef
+
+# Emit:
+#   <COLLECTION> rdf:type skos:Collection .
+#   <COLLECTION> skos:member <QID> .
+# $(1) = collection URI (no <>)
+# $(2) = file containing <QID> IRIs
+define emit_skos_collection
+{ \
+  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_COLLECTION_URI)> ."; \
+  sed -E 's|(.*)|<$(1)> <$(SKOS_MEMBER_URI)> \1 .|' $(2); \
+}
+endef
 
 # -----------------------
 # Default target
@@ -149,36 +187,56 @@ $(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
 	  > $(P31_NONCORE_QIDS)
 	touch $@
 
-# -----------------------
-# 7. Generate SKOS triples (parallel substeps)
-# -----------------------
+# =========================================================
+# Subject-specific SKOS export
+# Usage: make skos_subject SUBJECT=Q5
+# =========================================================
 
-SKOS_CONCEPTS   := $(SKOS_DIR)/skos_concepts.nt
-SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
-SKOS_LABELS     := $(SKOS_DIR)/skos_labels_en.nt
-SKOS_BROADER    := $(SKOS_DIR)/skos_broader.nt
+SUBJECT          ?=
+SUBJECT_FILE      = $(SUBJECTS_DIR)/$(SUBJECT)_subjects.tsv
+SUBJECT_URI       = http://www.wikidata.org/entity/$(SUBJECT)
+SUBJECT_COL_URI   = https://wikicore.ca/subject/$(SUBJECT)
+SUBJECT_OUT       = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(SUBJECT).ttl
 
-SKOS_NT := \
-	$(SKOS_CONCEPTS) \
-	$(SKOS_COLLECTION) \
-	$(SKOS_LABELS) \
-	$(SKOS_BROADER)
+.PHONY: skos_subject check_subject
+
+skos_subject: check_subject $(SUBJECT_OUT)
+	@echo "→ $(SUBJECT_OUT)"
+
+check_subject:
+	@if [ -z "$(SUBJECT)" ]; then \
+	  echo "ERROR: SUBJECT=QID required (e.g. make skos_subject SUBJECT=Q5)"; \
+	  exit 1; \
+	fi
+	@if [ ! -f "$(SUBJECT_FILE)" ]; then \
+	  echo "ERROR: Subject file $(SUBJECT_FILE) does not exist"; \
+	  exit 1; \
+	fi
+
+$(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
+	@echo "Generating SKOS for subject $(SUBJECT)…"
+	@mkdir -p $(ROOT_DIR)
+	@{ \
+	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
+	  $(call emit_skos_collection,$(SUBJECT_COL_URI),$(SUBJECT_FILE)); \
+	  grep -F "<$(SUBJECT_URI)>" $(SKOS_LABELS) || true; \
+	} | riot --syntax=ntriples --output=turtle \
+	         --base='http://www.wikidata.org/entity/' \
+	> $@
+
+# =========================================================
+# 7. Generate SKOS triples (batch pipeline)
+# =========================================================
 
 # --- 7a. skos:Concept typing
 $(SKOS_CONCEPTS): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	sed -E 's|(.*)|\1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .|' \
-	  $(P31_NONCORE_QIDS) \
-	  > $@
+	$(call emit_skos_concepts,$(P31_NONCORE_QIDS)) > $@
 
 # --- 7b. skos:Collection + members
 $(SKOS_COLLECTION): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	{ \
-	  echo "<$(COLLECTION_URI)> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Collection> ."; \
-	  sed -E "s|(.*)|<$(COLLECTION_URI)> <http://www.w3.org/2004/02/skos/core#member> \1 .|" \
-	    $(P31_NONCORE_QIDS); \
-	} > $@
+	$(call emit_skos_collection,$(COLLECTION_URI),$(P31_NONCORE_QIDS)) > $@
 
 # --- 7c. English labels (join)
 $(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
@@ -190,7 +248,7 @@ $(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
 # --- 7d. skos:broader from backbone
 $(SKOS_BROADER): $(CONCEPT_BACKBONE)
 	mkdir -p $(SKOS_DIR)
-	sed -E 's|<[^>]+>|<http://www.w3.org/2004/02/skos/core#broader>|2' \
+	sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
 	  $< > $@
 
 # --- 7e. Stamp (fan-in)
