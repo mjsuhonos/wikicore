@@ -74,7 +74,7 @@ for qid, subs in subjects.items():
     if qid == "P31_other":
         out_file = SUBJECTS_DIR / "P31_other.subjects.tsv"
     else:
-        out_file = SUBJECTS_DIR / f"{qid}_{class_names[qid]}_subjects.tsv"
+        out_file = SUBJECTS_DIR / f"{qid}_subjects.tsv"
     with open(out_file, "a") as f:
         for s in sorted(subs):
             f.write(s + "\n")

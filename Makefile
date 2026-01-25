@@ -11,18 +11,17 @@ SHELL := /bin/zsh
 ROOT_DIR := $(PWD)
 SOURCE_DIR := $(ROOT_DIR)/source.nosync
 WORK_DIR := $(ROOT_DIR)/working.nosync
-NT_DIR := $(WORK_DIR)/nt
 JENA_DIR := $(WORK_DIR)/jena
 SUBJECTS_DIR := $(WORK_DIR)/subjects
 SKOS_DIR := $(WORK_DIR)/skos
-TMP_DIR := $(WORK_DIR)/tmp_outputs
 SPLIT_DIR := $(WORK_DIR)/splits
 QUERIES_DIR := $(ROOT_DIR)/queries
-
 CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 
+# -----------------------
+# Options
+# -----------------------
 export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$$(nproc)"
-
 RUN_DATE := $(shell date +%Y%m%d)
 COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
 
@@ -40,6 +39,7 @@ CORE_CONCEPTS_RAW := $(WORK_DIR)/core_concepts_raw.tsv
 # FIXME: are these always the same?
 CORE_CONCEPTS_QIDS := $(WORK_DIR)/core_concepts_qids.tsv
 P31_NONCORE_QIDS := $(WORK_DIR)/p31_noncore_qids.tsv
+CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
 
 # -----------------------
 # SKOS outputs
@@ -93,15 +93,19 @@ $(SPLIT_DONE): $(EXTRACT_DONE)
 # -----------------------
 # 2b. Partition chunks (parallel)
 # -----------------------
-$(PARTITION_DONE): $(SPLIT_DONE)
-	mkdir -p $(TMP_DIR) $(SUBJECTS_DIR)
-	@echo "Partitioning chunks in parallel…"
+$(CONCEPT_BACKBONE): $(SPLIT_DONE)
+	mkdir -p $(SUBJECTS_DIR)
+	@echo "Partitioning chunks in parallel and generating backbone…"
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $$(nproc) \
 	           --eta \
 	           --halt now,fail=1 \
 	           'echo "[{#}] Processing {}"; \
-	            python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(TMP_DIR) $(SUBJECTS_DIR)'
+	            python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
+	@echo "→ $(CONCEPT_BACKBONE) created"
+
+# Partition done now depends on the backbone
+$(PARTITION_DONE): $(CONCEPT_BACKBONE)
 	touch $@
 
 # -----------------------
@@ -120,7 +124,7 @@ $(SUBJECTS_SORTED_DONE): $(PARTITION_DONE)
 # -----------------------
 $(JENA_DONE): $(PARTITION_DONE)
 	mkdir -p $(JENA_DIR)
-	tdb2.tdbloader --loc $(JENA_DIR) $(TMP_DIR)/concept_backbone.nt
+	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
 	touch $@
 
 # -----------------------
@@ -184,7 +188,7 @@ $(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
 	  > $@
 
 # --- 7d. skos:broader from backbone
-$(SKOS_BROADER): $(TMP_DIR)/concept_backbone.nt
+$(SKOS_BROADER): $(CONCEPT_BACKBONE)
 	mkdir -p $(SKOS_DIR)
 	sed -E 's|<[^>]+>|<http://www.w3.org/2004/02/skos/core#broader>|2' \
 	  $< > $@
@@ -199,9 +203,7 @@ $(SKOS_DONE): $(SKOS_NT)
 
 $(FINAL_TTL): $(SKOS_NT)
 	@echo "Merging SKOS N-Triples and converting to Turtle…"
-	riot --formatted=turtle \
-	     --base='http://www.w3.org/2004/02/skos/core#' \
-	     <(cat $^) > $@
+	cat $^ | riot --formatted=turtle --base='http://www.w3.org/2004/02/skos/core#' > $@
 
 # -----------------------
 # Clean
