@@ -64,7 +64,8 @@ SKOS_DONE := $(WORK_DIR)/skos.done
 # -----------------------
 # Default target
 # -----------------------
-all: $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
+FINAL_TTL := $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
+all: $(FINAL_TTL)
 
 # -----------------------
 # 1. Extract core properties
@@ -84,7 +85,7 @@ $(EXTRACT_DONE): $(PROP_DIRECT_GZ)
 # -----------------------
 $(SPLIT_DONE): $(EXTRACT_DONE)
 	mkdir -p $(SPLIT_DIR)
-	echo "Splitting core properties into chunks…"
+	@echo "Splitting core properties into chunks…"
 	gsplit -n l/$$(nproc) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	touch $@
 
@@ -93,7 +94,7 @@ $(SPLIT_DONE): $(EXTRACT_DONE)
 # -----------------------
 $(PARTITION_DONE): $(SPLIT_DONE)
 	mkdir -p $(TMP_DIR) $(SUBJECTS_DIR)
-	echo "Partitioning chunks in parallel…"
+	@echo "Partitioning chunks in parallel…"
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $$(nproc) \
 	           --eta \
@@ -180,44 +181,14 @@ $(SKOS_DONE): $(SKOS_NT)
 	touch $@
 
 # -----------------------
-# 8. Export Turtle (parallel fan-out)
+# 8. Export Turtle
 # -----------------------
 
-TTL_CONCEPTS := $(OUTPUT_DIR)/skos_concepts.ttl
-TTL_COLLECTION := $(OUTPUT_DIR)/skos_collection.ttl
-TTL_LABELS := $(OUTPUT_DIR)/skos_labels_en.ttl
-TTL_PARTS := $(TTL_CONCEPTS) $(TTL_COLLECTION) $(TTL_LABELS)
-
-FINAL_TTL := $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
-
-# --- 8a. Concepts
-$(TTL_CONCEPTS): $(SKOS_CONCEPTS)
-	mkdir -p $(OUTPUT_DIR)
+$(FINAL_TTL): $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+	@echo "Merging SKOS N-Triples and converting to Turtle…"
 	riot --syntax=ntriples --output=turtle \
 	     --base='http://www.wikidata.org/entity/' \
-	     $< > $@
-
-# --- 8b. Collection
-$(TTL_COLLECTION): $(SKOS_COLLECTION)
-	mkdir -p $(OUTPUT_DIR)
-	riot --syntax=ntriples --output=turtle \
-	     --base='http://www.wikidata.org/entity/' \
-	     $< > $@
-
-# --- 8c. Labels
-$(TTL_LABELS): $(SKOS_LABELS)
-	mkdir -p $(OUTPUT_DIR)
-	riot --syntax=ntriples --output=turtle \
-	     --base='http://www.wikidata.org/entity/' \
-	     $< > $@
-
-# --- 8d. Fan-in merge
-$(FINAL_TTL): $(TTL_PARTS)
-	cat $(TTL_PARTS) \
-	  | LC_ALL=C sort \
-	  > $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
-	# Move final TTL to ROOT_DIR
-	mv $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl $(ROOT_DIR)/wikicore-$(RUN_DATE).ttl
+	     <(cat $^) > $@
 
 # -----------------------
 # Clean
