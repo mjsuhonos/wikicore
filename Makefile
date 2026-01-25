@@ -15,7 +15,6 @@ NT_DIR := $(WORK_DIR)/nt
 JENA_DIR := $(WORK_DIR)/jena
 SUBJECTS_DIR := $(WORK_DIR)/subjects
 SKOS_DIR := $(WORK_DIR)/skos
-OUTPUT_DIR := $(WORK_DIR)/output
 TMP_DIR := $(WORK_DIR)/tmp_outputs
 SPLIT_DIR := $(WORK_DIR)/splits
 QUERIES_DIR := $(ROOT_DIR)/queries
@@ -64,7 +63,7 @@ SKOS_DONE := $(WORK_DIR)/skos.done
 # -----------------------
 # Default target
 # -----------------------
-FINAL_TTL := $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
+FINAL_TTL := $(ROOT_DIR)/wikicore-$(RUN_DATE).ttl
 all: $(FINAL_TTL)
 
 # -----------------------
