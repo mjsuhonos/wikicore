@@ -149,10 +149,16 @@ $(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
 # 7. Generate SKOS triples (parallel substeps)
 # -----------------------
 
-SKOS_CONCEPTS := $(SKOS_DIR)/skos_concepts.nt
+SKOS_CONCEPTS   := $(SKOS_DIR)/skos_concepts.nt
 SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
-SKOS_LABELS := $(SKOS_DIR)/skos_labels_en.nt
-SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+SKOS_LABELS     := $(SKOS_DIR)/skos_labels_en.nt
+SKOS_BROADER    := $(SKOS_DIR)/skos_broader.nt
+
+SKOS_NT := \
+	$(SKOS_CONCEPTS) \
+	$(SKOS_COLLECTION) \
+	$(SKOS_LABELS) \
+	$(SKOS_BROADER)
 
 # --- 7a. skos:Concept typing
 $(SKOS_CONCEPTS): $(FILTER_DONE)
@@ -177,7 +183,13 @@ $(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
 	  | join - $(P31_NONCORE_QIDS) \
 	  > $@
 
-# --- 7d. Stamp (fan-in)
+# --- 7d. skos:broader from backbone
+$(SKOS_BROADER): $(TMP_DIR)/concept_backbone.nt
+	mkdir -p $(SKOS_DIR)
+	sed -E 's|<[^>]+>|<http://www.w3.org/2004/02/skos/core#broader>|2' \
+	  $< > $@
+
+# --- 7e. Stamp (fan-in)
 $(SKOS_DONE): $(SKOS_NT)
 	touch $@
 
