@@ -183,10 +183,10 @@ $(SKOS_DONE): $(SKOS_NT)
 # 8. Export Turtle
 # -----------------------
 
-$(FINAL_TTL): $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS)
+$(FINAL_TTL): $(SKOS_NT)
 	@echo "Merging SKOS N-Triples and converting to Turtle…"
-	riot --syntax=ntriples --output=turtle \
-	     --base='http://www.wikidata.org/entity/' \
+	riot --formatted=turtle \
+	     --base='http://www.w3.org/2004/02/skos/core#' \
 	     <(cat $^) > $@
 
 # -----------------------
