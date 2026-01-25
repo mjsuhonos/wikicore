@@ -102,7 +102,6 @@ $(PARTITION_DONE): $(SPLIT_DONE)
 	            python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(TMP_DIR) $(SUBJECTS_DIR)'
 	touch $@
 
-
 # -----------------------
 # 3. Sort subject vocabularies
 # -----------------------
@@ -113,7 +112,6 @@ $(SUBJECTS_SORTED_DONE): $(PARTITION_DONE)
 	  | xargs -0 -n 1 -P $$(nproc) \
 	      sh -c 'echo "Sorting $$1…"; LC_ALL=C sort -u "$$1" -o "$$1"' _
 	touch $@
-
 
 # -----------------------
 # 4. Load backbone into Jena
@@ -141,10 +139,9 @@ $(CORE_CONCEPTS_DONE): $(JENA_DONE)
 $(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
 	@echo "Filtering out P31 instances from core concepts…"
 	LC_ALL=C sort -m $(SUBJECTS_DIR)/*.subjects.tsv \
-	  | join --check-order -v 1 $(CORE_CONCEPTS_QIDS) - \
+	  | join -v 1 $(CORE_CONCEPTS_QIDS) - \
 	  > $(P31_NONCORE_QIDS)
 	touch $@
-
 
 # -----------------------
 # 7. Generate SKOS triples (parallel substeps)
@@ -221,7 +218,6 @@ $(FINAL_TTL): $(TTL_PARTS)
 	  > $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl
 	# Move final TTL to ROOT_DIR
 	mv $(OUTPUT_DIR)/wikicore-$(RUN_DATE).ttl $(ROOT_DIR)/wikicore-$(RUN_DATE).ttl
-
 
 # -----------------------
 # Clean
