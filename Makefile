@@ -37,6 +37,7 @@ SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
 # -----------------------
 CORE_PROPS_NT := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
 CORE_CONCEPTS_RAW := $(WORK_DIR)/core_concepts_raw.tsv
+# FIXME: are these always the same?
 CORE_CONCEPTS_QIDS := $(WORK_DIR)/core_concepts_qids.tsv
 P31_NONCORE_QIDS := $(WORK_DIR)/p31_noncore_qids.tsv
 
@@ -76,6 +77,7 @@ $(EXTRACT_DONE): $(PROP_DIRECT_GZ)
 	      -e '/prop/direct/P31>' \
 	      -e '/prop/direct/P279>' \
 	      -e '/prop/direct/P361>' \
+	  | rg -F -v '_:' \
 	  > $(CORE_PROPS_NT)
 	touch $@
 

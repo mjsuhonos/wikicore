@@ -51,23 +51,22 @@ with open(chunk_file) as f:
         if pred.endswith("P31>"):
             qid = obj.strip("<>")
             qid = qid.split("/")[-1]
-            subj_clean = subj.strip("<>")
+
             if qid in class_names:
-                subjects.setdefault(qid, set()).add(subj_clean)
+                subjects.setdefault(qid, set()).add(subj)
             else:
-                subjects.setdefault("P31_other", set()).add(subj_clean)
+                subjects.setdefault("P31_other", set()).add(subj)
+            
         else:
-            # Backbone triple: validate N-Triple format (allow IRIs or blank nodes)
-            if (subj.startswith("<") or subj.startswith("_:")) and \
-               (pred.startswith("<") or pred.startswith("_:")) and \
-               (obj.startswith("<") or obj.startswith("_:") or obj.startswith('"')):
+            # Backbone triple: IRIs only (no blank nodes allowed)
+            if subj.startswith("<") and pred.startswith("<") and (obj.startswith("<") or obj.startswith('"')):
                 backbone_buffer.append(line + "\n")
                 if len(backbone_buffer) >= BUFFER_SIZE:
                     flush_backbone(backbone_buffer)
             else:
                 print(f"ERROR: Malformed backbone triple: {line}", file=sys.stderr)
                 sys.exit(1)
-
+            
 flush_backbone(backbone_buffer)
 
 # Write subjects
