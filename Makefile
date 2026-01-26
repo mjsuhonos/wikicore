@@ -36,9 +36,8 @@ SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
 # -----------------------
 CORE_PROPS_NT := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
 CORE_CONCEPTS_RAW := $(WORK_DIR)/core_concepts_raw.tsv
-# FIXME: are these always the same?
 CORE_CONCEPTS_QIDS := $(WORK_DIR)/core_concepts_qids.tsv
-P31_NONCORE_QIDS := $(WORK_DIR)/p31_noncore_qids.tsv
+CORE_NOSUBJECT_QIDS := $(WORK_DIR)/core_nosubject_qids.tsv
 CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
 
 # -----------------------
@@ -67,9 +66,9 @@ CORE_CONCEPTS_DONE := $(WORK_DIR)/core_concepts.done
 FILTER_DONE := $(WORK_DIR)/filter.done
 SKOS_DONE := $(WORK_DIR)/skos.done
 
-# =========================================================
+# -----------------------
 # Shared RDF / SKOS constants
-# =========================================================
+# -----------------------
 
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
 SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
@@ -77,9 +76,9 @@ SKOS_COLLECTION_URI = http://www.w3.org/2004/02/skos/core\#Collection
 SKOS_MEMBER_URI     = http://www.w3.org/2004/02/skos/core\#member
 SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
 
-# =========================================================
+# -----------------------
 # Shared SKOS emitters (macros)
-# =========================================================
+# -----------------------
 
 # Emit: <QID> rdf:type skos:Concept .
 # $(1) = file containing <QID> IRIs (one per line)
@@ -109,6 +108,7 @@ all: $(FINAL_TTL)
 # 1. Extract core properties
 # -----------------------
 $(EXTRACT_DONE): $(PROP_DIRECT_GZ)
+	@echo "=====> Extracting core properties…"
 	mkdir -p $(WORK_DIR)
 	pigz -dc $< \
 	  | rg -F \
@@ -124,7 +124,7 @@ $(EXTRACT_DONE): $(PROP_DIRECT_GZ)
 # -----------------------
 $(SPLIT_DONE): $(EXTRACT_DONE)
 	mkdir -p $(SPLIT_DIR)
-	@echo "Splitting core properties into chunks…"
+	@echo "=====> Splitting core properties into chunks…"
 	gsplit -n l/$$(nproc) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	touch $@
 
@@ -133,14 +133,14 @@ $(SPLIT_DONE): $(EXTRACT_DONE)
 # -----------------------
 $(CONCEPT_BACKBONE): $(SPLIT_DONE)
 	mkdir -p $(SUBJECTS_DIR)
-	@echo "Partitioning chunks in parallel and generating backbone…"
+	@echo "=====> Partitioning chunks in parallel and generating backbone…"
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $$(nproc) \
 	           --eta \
 	           --halt now,fail=1 \
 	           'echo "[{#}] Processing {}"; \
 	            python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
-	@echo "→ $(CONCEPT_BACKBONE) created"
+	@echo "=====> → $(CONCEPT_BACKBONE) created"
 
 # Partition done now depends on the backbone
 $(PARTITION_DONE): $(CONCEPT_BACKBONE)
@@ -150,8 +150,7 @@ $(PARTITION_DONE): $(CONCEPT_BACKBONE)
 # 3. Sort subject vocabularies
 # -----------------------
 $(SUBJECTS_SORTED_DONE): $(PARTITION_DONE)
-	@echo "Sorting and deduplicating subject vocabularies…"
-	# Use null-delimited list for safety with spaces in filenames
+	@echo "=====> Sorting and deduplicating subject vocabularies…"
 	find $(SUBJECTS_DIR) -name '*.subjects.tsv' -print0 \
 	  | xargs -0 -n 1 -P $$(nproc) \
 	      sh -c 'echo "Sorting $$1…"; LC_ALL=C sort -u "$$1" -o "$$1"' _
@@ -181,34 +180,37 @@ $(CORE_CONCEPTS_DONE): $(JENA_DONE)
 # 6. Remove P31 instances from core concepts
 # -----------------------
 $(FILTER_DONE): $(CORE_CONCEPTS_DONE) $(SUBJECTS_SORTED_DONE)
-	@echo "Filtering out P31 instances from core concepts…"
-	LC_ALL=C sort -m $(SUBJECTS_DIR)/*.subjects.tsv \
+	@echo "=====> Filtering out P31 instances from core concepts…"
+	LC_ALL=C sort -m $(SUBJECTS_DIR)/*subjects.tsv \
+	  | LC_ALL=C sort -u \
 	  | join -v 1 $(CORE_CONCEPTS_QIDS) - \
-	  > $(P31_NONCORE_QIDS)
+	  | LC_ALL=C sort -u \
+	  > $(CORE_NOSUBJECT_QIDS)
 	touch $@
 
-# =========================================================
+# -----------------------
 # 7. Generate SKOS triples (batch pipeline)
-# =========================================================
+# -----------------------
 
 # --- 7a. skos:Concept typing
 $(SKOS_CONCEPTS): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	$(call emit_skos_concepts,$(P31_NONCORE_QIDS)) > $@
+	$(call emit_skos_concepts,$(CORE_NOSUBJECT_QIDS)) > $@
 
 # --- 7b. skos:Collection + members
 $(SKOS_COLLECTION): $(FILTER_DONE)
 	mkdir -p $(SKOS_DIR)
-	$(call emit_skos_collection,$(COLLECTION_URI),$(P31_NONCORE_QIDS)) > $@
+	$(call emit_skos_collection,$(COLLECTION_URI),$(CORE_NOSUBJECT_QIDS)) > $@
 
 # --- 7c. English labels (join)
 $(SKOS_LABELS): $(FILTER_DONE) $(SKOS_LABELS_GZ)
 	mkdir -p $(SKOS_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) \
-	  | join - $(P31_NONCORE_QIDS) \
+	  | join - $(CORE_NOSUBJECT_QIDS) \
 	  > $@
 
 # --- 7d. skos:broader from backbone
+# FIXME: this will include QIDS from subjects
 $(SKOS_BROADER): $(CONCEPT_BACKBONE)
 	mkdir -p $(SKOS_DIR)
 	sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
@@ -223,7 +225,7 @@ $(SKOS_DONE): $(SKOS_NT)
 # -----------------------
 
 $(FINAL_TTL): $(SKOS_NT)
-	@echo "Merging SKOS N-Triples and converting to Turtle…"
+	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
 	cat $^ | riot --formatted=turtle --base='http://www.w3.org/2004/02/skos/core#' > $@
 
 # -----------------------
@@ -232,10 +234,10 @@ $(FINAL_TTL): $(SKOS_NT)
 clean:
 	rm -rf $(WORK_DIR)
 
-# =========================================================
+# -----------------------
 # Subject-specific SKOS export
 # Usage: make skos_subject SUBJECT=Q5
-# =========================================================
+# -----------------------
 
 SUBJECT          ?=
 SUBJECT_FILE      = $(SUBJECTS_DIR)/$(SUBJECT)_subjects.tsv
@@ -246,7 +248,7 @@ SUBJECT_OUT       = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(SUBJECT).ttl
 .PHONY: skos_subject check_subject
 
 skos_subject: check_subject $(SUBJECT_OUT)
-	@echo "→ $(SUBJECT_OUT)"
+	@echo "=====> → $(SUBJECT_OUT)"
 
 check_subject:
 	@if [ -z "$(SUBJECT)" ]; then \
@@ -259,7 +261,7 @@ check_subject:
 	fi
 
 $(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
-	@echo "Generating SKOS for subject $(SUBJECT)…"
+	@echo "=====> Generating SKOS for subject $(SUBJECT)…"
 	@mkdir -p $(ROOT_DIR)
 	@{ \
 	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
