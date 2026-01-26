@@ -2,7 +2,7 @@
 # Wikidata processing pipeline (Makefile)
 # -----------------------
 
-SHELL := /bin/zsh
+SHELL := /bin/bash
 .PHONY: all clean skos_subject
 
 # -----------------------
@@ -98,28 +98,25 @@ $(SPLIT_DIR)/chunk_%: $(CORE_PROPS_NT) | $(SPLIT_DIR)
 # -----------------------
 # 2b. Partition chunks
 # -----------------------
-$(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_%
+$(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_% | $(SUBJECTS_DIR)
 	@echo "=====> Partitioning chunks and generating backbone…"
-	mkdir -p $(SUBJECTS_DIR)
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $$(nproc) --eta --halt now,fail=1 \
-	    'echo "[{#}] Processing {}"; python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
+	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
 # -----------------------
-# 3. Sort subject vocabularies
+# 3. Sort and deduplicate subject vocabularies
 # -----------------------
 SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
 $(SUBJECTS_SORTED): $(CONCEPT_BACKBONE)
-	@echo "=====> Sorting and deduplicating subject vocabularies…"
-	find $(SUBJECTS_DIR) -name '*.subjects.tsv' -print0 \
-	  | xargs -0 -n 1 -P $$(nproc) \
-	    sh -c 'echo "Sorting $$1…"; LC_ALL=C sort -u "$$1" -o "$$1"'
-	touch $@
+	@echo "=====> Merging and deduplicating subject files…"
+	LC_ALL=C sort -um --parallel=$$(nproc) $(SUBJECTS_DIR)/*.subjects.tsv > $@
 
 # -----------------------
 # 4. Load backbone into Jena
 # -----------------------
 $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
+	@echo "=====> Loading backbone into Jena…"
 	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
 	touch $@
 
@@ -127,28 +124,26 @@ $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 # 5. Materialize + export core concepts
 # -----------------------
 $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
+	@echo "=====> Materializing core concepts…"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_graph.rq"
 	tdb2.tdbquery --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
 	  > $(CORE_CONCEPTS_RAW)
 	grep -F '<http://www.wikidata.org/entity/' $(CORE_CONCEPTS_RAW) \
 	  | LC_ALL=C sort --parallel=$$(nproc) -u \
-	  > $(CORE_CONCEPTS_QIDS)
+	  > $@
 
 # -----------------------
 # 6. Filter out P31 instances
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
-	@echo "=====> Filtering out P31 instances from core concepts…"
-	LC_ALL=C sort -m $(SUBJECTS_DIR)/*subjects.tsv \
-	  | LC_ALL=C sort -u \
-	  | join -v 1 $(CORE_CONCEPTS_QIDS) - \
-	  | LC_ALL=C sort -u \
-	  > $@
+	@echo "=====> Filtering out P31 instances…"
+	comm -23 $< $(SUBJECTS_SORTED) > $@
 
 # -----------------------
 # 7. Generate SKOS triples
 # -----------------------
 $(SKOS_DIR)/%.nt: $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
+
 $(SKOS_CONCEPTS): $(CORE_NOSUBJECT_QIDS)
 	$(call emit_skos_concepts,$(CORE_NOSUBJECT_QIDS)) > $@
 
@@ -156,9 +151,12 @@ $(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
 	$(call emit_skos_collection,$(COLLECTION_URI),$(CORE_NOSUBJECT_QIDS)) > $@
 
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
-	pigz -dc $(SKOS_LABELS_GZ) | join - $(CORE_NOSUBJECT_QIDS) > $@
+	@echo "=====> Joining SKOS labels with core concepts…"
+	pigz -dc $(SKOS_LABELS_GZ) \
+	  | LC_ALL=C sort > $(WORK_DIR)/skos_labels_sorted.tsv
+	LC_ALL=C join $(WORK_DIR)/skos_labels_sorted.tsv $(CORE_NOSUBJECT_QIDS) > $@
 
-$(SKOS_BROADER): $(CONCEPT_BACKBONE)
+$(SKOS_BROADER): $(CONCEPT_BACKBONE) | $(SKOS_DIR)
 	sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' $< > $@
 
 # -----------------------
@@ -166,12 +164,12 @@ $(SKOS_BROADER): $(CONCEPT_BACKBONE)
 # -----------------------
 $(FINAL_TTL): $(SKOS_NT)
 	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
-	cat $^ | riot --formatted=turtle --base='http://www.w3.org/2004/02/skos/core#' > $@
+	riot --formatted=turtle --base='http://www.w3.org/2004/02/skos/core#' $^ > $@
 
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SKOS_DIR):
+$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR):
 	mkdir -p $@
 
 # -----------------------
