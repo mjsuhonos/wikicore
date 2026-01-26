@@ -108,9 +108,27 @@ $(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_% | $(SUBJECTS_DIR)
 # 3. Sort and deduplicate subject vocabularies
 # -----------------------
 SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
-$(SUBJECTS_SORTED): $(CONCEPT_BACKBONE)
-	@echo "=====> Merging and deduplicating subject files…"
-	LC_ALL=C sort -um --parallel=$$(nproc) $(SUBJECTS_DIR)/*.subjects.tsv > $@
+SUBJECTS_DONE   := $(SUBJECTS_DIR)/.subjects_individually_sorted
+
+SORT   := gsort
+LC     := LC_ALL=C
+TMPDIR := $(SUBJECTS_DIR)/tmp
+NPROC  := $(PARALLEL)
+
+$(TMPDIR):
+	mkdir -p $@
+
+$(SUBJECTS_DONE): $(TMPDIR) $(CONCEPT_BACKBONE)
+	@echo "=====> Sorting and deduplicating individual subject files…"
+	@parallel --bar --jobs $(NPROC) --tmpdir=$(TMPDIR) \
+	 '$(LC) $(SORT) -u -T $(TMPDIR) -o {1} {1}' \
+	 ::: $(SUBJECTS_DIR)/*subjects.tsv
+	@touch $@
+
+$(SUBJECTS_SORTED): $(SUBJECTS_DONE)
+	@echo "=====> Merging all sorted subject files into $@ …"
+	$(LC) $(SORT) -m -u -T $(TMPDIR) \
+	 $(SUBJECTS_DIR)/*subjects.tsv > $@
 
 # -----------------------
 # 4. Load backbone into Jena
@@ -134,6 +152,7 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 
 # -----------------------
 # 6. Filter out P31 instances
+# TODO: audit logic
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
