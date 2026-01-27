@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all clean skos_subject
+.PHONY: all clean skos_subject check_subject
 
 # -----------------------
 # Paths
@@ -21,9 +21,10 @@ CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 # -----------------------
 # Options
 # -----------------------
-export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$$(nproc)"
+JOBS ?= $(shell nproc)
 RUN_DATE := $(shell date +%Y%m%d)
 COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
+export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 
 # -----------------------
 # Inputs
@@ -35,7 +36,6 @@ SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
 # Core files
 # -----------------------
 CORE_PROPS_NT := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
-CORE_CONCEPTS_RAW := $(WORK_DIR)/core_concepts_raw.tsv
 CORE_CONCEPTS_QIDS := $(WORK_DIR)/core_concepts_qids.tsv
 CORE_NOSUBJECT_QIDS := $(WORK_DIR)/core_nosubject_qids.tsv
 CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
@@ -89,19 +89,20 @@ $(CORE_PROPS_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
 	  > $@
 
 # -----------------------
-# 2a. Split into chunks
+# 2. Split + partition core properties
 # -----------------------
-$(SPLIT_DIR)/chunk_%: $(CORE_PROPS_NT) | $(SPLIT_DIR)
-	@echo "=====> Splitting core properties into chunks…"
-	gsplit -n l/$$(nproc) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
+SPLIT_DONE := $(SPLIT_DIR)/.split_done
+CHUNKS := $(wildcard $(SPLIT_DIR)/chunk_*)
 
-# -----------------------
-# 2b. Partition chunks
-# -----------------------
-$(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_% | $(SUBJECTS_DIR)
+$(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
+	@echo "=====> Splitting core properties into chunks…"
+	gsplit -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
+	@touch $@
+
+$(CONCEPT_BACKBONE): $(SPLIT_DONE) | $(SUBJECTS_DIR)
 	@echo "=====> Partitioning chunks and generating backbone…"
 	ls $(SPLIT_DIR)/chunk_* | \
-	  parallel -j $$(nproc) --eta --halt now,fail=1 \
+	  parallel -j $(JOBS) --eta --halt now,fail=1 \
 	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
 # -----------------------
@@ -110,22 +111,17 @@ $(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_% | $(SUBJECTS_DIR)
 SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE   := $(SUBJECTS_DIR)/.subjects_individually_sorted
 
-TMPDIR := $(SUBJECTS_DIR)/tmp
-
-$(TMPDIR):
-	mkdir -p $@
-
-$(SUBJECTS_DONE): $(TMPDIR) $(CONCEPT_BACKBONE)
+$(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
 	@echo "=====> Sorting and deduplicating individual subject files…"
-	@parallel --bar --jobs $$(nproc) --tmpdir=$(TMPDIR) \
-	 'LC_ALL=C sort -u -T $(TMPDIR) -o {1} {1}' \
-	 ::: $(SUBJECTS_DIR)/*subjects.tsv
+	parallel --bar --jobs $(JOBS) \
+	  'LC_ALL=C sort -u -o {1} {1}' \
+	  ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
 $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	@echo "=====> Merging all sorted subject files into $@ …"
-	LC_ALL=C sort -m -u -T $(TMPDIR) \
-	 $(SUBJECTS_DIR)/*subjects.tsv > $@
+	LC_ALL=C sort -m -u \
+	  $(SUBJECTS_DIR)/*subjects.tsv > $@
 
 # -----------------------
 # 4. Load backbone into Jena
@@ -142,14 +138,12 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 	@echo "=====> Materializing core concepts…"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_graph.rq"
 	tdb2.tdbquery --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
-	  > $(CORE_CONCEPTS_RAW)
-	grep -F '<http://www.wikidata.org/entity/' $(CORE_CONCEPTS_RAW) \
-	  | LC_ALL=C sort --parallel=$$(nproc) -u \
-	  > $@
+	 | grep -F '<http://www.wikidata.org/entity/' \
+	 | LC_ALL=C sort -u \
+	 > $@
 
 # -----------------------
 # 6. Filter out P31 instances
-# TODO: audit logic
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
@@ -168,9 +162,11 @@ $(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
 
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
 	@echo "=====> Joining SKOS labels with core concepts…"
-	pigz -dc $(SKOS_LABELS_GZ) \
-	  | LC_ALL=C sort > $(WORK_DIR)/skos_labels_sorted.tsv
-	LC_ALL=C join $(WORK_DIR)/skos_labels_sorted.tsv $(CORE_NOSUBJECT_QIDS) > $@
+	LC_ALL=C \
+	  pigz -dc $(SKOS_LABELS_GZ) \
+	  | sort \
+	  | join - $(CORE_NOSUBJECT_QIDS) \
+	  > $@
 
 $(SKOS_BROADER): $(CONCEPT_BACKBONE) | $(SKOS_DIR)
 	sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' $< > $@
