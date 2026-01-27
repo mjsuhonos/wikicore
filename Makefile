@@ -110,24 +110,21 @@ $(CONCEPT_BACKBONE): $(SPLIT_DIR)/chunk_% | $(SUBJECTS_DIR)
 SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE   := $(SUBJECTS_DIR)/.subjects_individually_sorted
 
-SORT   := gsort
-LC     := LC_ALL=C
 TMPDIR := $(SUBJECTS_DIR)/tmp
-NPROC  := $(PARALLEL)
 
 $(TMPDIR):
 	mkdir -p $@
 
 $(SUBJECTS_DONE): $(TMPDIR) $(CONCEPT_BACKBONE)
 	@echo "=====> Sorting and deduplicating individual subject files…"
-	@parallel --bar --jobs $(NPROC) --tmpdir=$(TMPDIR) \
-	 '$(LC) $(SORT) -u -T $(TMPDIR) -o {1} {1}' \
+	@parallel --bar --jobs $$(nproc) --tmpdir=$(TMPDIR) \
+	 'LC_ALL=C sort -u -T $(TMPDIR) -o {1} {1}' \
 	 ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
 $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	@echo "=====> Merging all sorted subject files into $@ …"
-	$(LC) $(SORT) -m -u -T $(TMPDIR) \
+	LC_ALL=C sort -m -u -T $(TMPDIR) \
 	 $(SUBJECTS_DIR)/*subjects.tsv > $@
 
 # -----------------------
