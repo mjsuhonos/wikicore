@@ -21,6 +21,7 @@ CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 # -----------------------
 # Options
 # -----------------------
+LOCALE ?= en
 JOBS ?= $(shell nproc)
 RUN_DATE := $(shell date +%Y%m%d)
 COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
@@ -30,7 +31,7 @@ export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 # Inputs
 # -----------------------
 PROP_DIRECT_GZ := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
-SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-en.nt.gz
+SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
 
 # -----------------------
 # Core files
@@ -45,7 +46,7 @@ CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
 # -----------------------
 SKOS_CONCEPTS   := $(SKOS_DIR)/skos_concepts.nt
 SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
-SKOS_LABELS     := $(SKOS_DIR)/skos_labels_en.nt
+SKOS_LABELS     := $(SKOS_DIR)/skos_labels_$(LOCALE).nt
 SKOS_BROADER    := $(SKOS_DIR)/skos_broader.nt
 SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS) $(SKOS_BROADER)
 
@@ -75,7 +76,7 @@ endef
 # -----------------------
 # Default target
 # -----------------------
-FINAL_TTL := $(ROOT_DIR)/wikicore-$(RUN_DATE).ttl
+FINAL_TTL := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE).ttl
 all: $(FINAL_TTL)
 
 # -----------------------
