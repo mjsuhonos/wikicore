@@ -118,10 +118,11 @@ $(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
+# NB: this includes ALL instance subjects (including p31_other)
 $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	@echo "=====> Merging all sorted subject files into $@ …"
 	LC_ALL=C sort -m -u \
-	  $(SUBJECTS_DIR)/*subjects.tsv > $@
+	  $(SUBJECTS_DIR)/Q*subjects.tsv > $@
 
 # -----------------------
 # 4. Load backbone into Jena
@@ -147,7 +148,7 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
-	comm -23 $< $(SUBJECTS_SORTED) > $@
+	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) > $@
 
 # -----------------------
 # 7. Generate SKOS triples
@@ -162,21 +163,25 @@ $(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
 
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
 	@echo "=====> Joining SKOS labels with core concepts…"
-	LC_ALL=C \
-	  pigz -dc $(SKOS_LABELS_GZ) \
-	  | sort \
-	  | join - $(CORE_NOSUBJECT_QIDS) \
+	pigz -dc $(SKOS_LABELS_GZ) \
+	  | LC_ALL=C sort \
+	  | LC_ALL=C join - $(CORE_NOSUBJECT_QIDS) \
 	  > $@
-
-$(SKOS_BROADER): $(CONCEPT_BACKBONE) | $(SKOS_DIR)
-	sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' $< > $@
+	
+# Filter out subject entities
+$(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
+	@echo "=====> Filtering backbone triples and applying SKOS broader URI…"
+	LC_ALL=C join $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) \
+	  | sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
+	  > $@
 
 # -----------------------
 # 8. Export Turtle
 # -----------------------
 $(FINAL_TTL): $(SKOS_NT)
 	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
-	riot --formatted=turtle --base='http://www.w3.org/2004/02/skos/core#' $^ > $@
+	cat $^ | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core#" - \
+	> $@
 
 # -----------------------
 # Directories
@@ -216,6 +221,5 @@ $(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
 	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
 	  $(call emit_skos_collection,$(SUBJECT_COL_URI),$(SUBJECT_FILE)); \
 	  grep -F "<$(SUBJECT_URI)>" $(SKOS_LABELS) || true; \
-	} | riot --syntax=ntriples --output=turtle \
-	         --base='http://www.wikidata.org/entity/' \
+	} | rapper -i ntriples -o turtle -I 'http://www.wikidata.org/entity/' - \
 	> $@
