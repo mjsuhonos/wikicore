@@ -148,7 +148,9 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
-	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) > $@
+	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) \
+	 | LC_ALL=C sort -u \
+	 > $@
 
 # -----------------------
 # 7. Generate SKOS triples
@@ -164,7 +166,7 @@ $(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
 	@echo "=====> Joining SKOS labels with core concepts…"
 	pigz -dc $(SKOS_LABELS_GZ) \
-	  | LC_ALL=C sort \
+	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join - $(CORE_NOSUBJECT_QIDS) \
 	  > $@
 	
@@ -174,6 +176,8 @@ $(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	LC_ALL=C join $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) \
 	  | sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
 	  > $@
+
+# TODO: filter through en_wikipedia sitelinks? (~250K -> 95K)
 
 # -----------------------
 # 8. Export Turtle

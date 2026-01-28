@@ -2,6 +2,7 @@ Q54050	hill
 Q8502	mountain
 Q30612	clinical_trial
 Q2996394	biological_process
+Q4915012	biological_pathway
 Q5	human
 Q101352	family_name
 Q523	star
@@ -21,6 +22,7 @@ Q20747295	protein-coding_gene
 Q113145171	type_of_chemical_entity
 Q59199015	group_of_stereoisomers
 Q47461807	candidate_set
+Q47461827	defined_set
 Q41207	coin
 Q113813711	coin_type
 Q7889	video_game
