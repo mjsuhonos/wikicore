@@ -152,6 +152,8 @@ $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	 | LC_ALL=C sort -u \
 	 > $@
 
+# TODO: filter through en_wikipedia sitelinks? (~250K -> 95K)
+
 # -----------------------
 # 7. Generate SKOS triples
 # -----------------------
@@ -177,15 +179,21 @@ $(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	  | sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
 	  > $@
 
-# TODO: filter through en_wikipedia sitelinks? (~250K -> 95K)
-
 # -----------------------
 # 8. Export Turtle
 # -----------------------
 $(FINAL_TTL): $(SKOS_NT)
 	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
-	cat $^ | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core#" - \
+	cat $^ | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core" - \
 	> $@
+
+# TODO: generate fulltext corpus
+# eg. gzcat wikidata5m_text.txt.gz \
+#	| sort \
+# convert first column to URIs
+# filter through CORE_NOSUBJECT_QIDS (careful of encoding!)
+# awk to swap places
+#	| awk -F'\t' -v OFS='\t' '{print $2, "<http://www.wikidata.org/entity/" $1 ">"}'
 
 # -----------------------
 # Directories
