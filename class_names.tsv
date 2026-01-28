@@ -19,6 +19,8 @@ Q8054	protein
 Q420927	protein_complex
 Q20747295	protein-coding_gene
 Q113145171	type_of_chemical_entity
+Q59199015	group_of_stereoisomers
+Q47461807	candidate_set
 Q41207	coin
 Q113813711	coin_type
 Q7889	video_game
@@ -53,9 +55,13 @@ Q3947	house
 Q16970	church
 Q9842	elementary_school
 Q1080794	public_school
+Q1241025	research_group
+Q180958	faculty
+Q2467461	academic_department
 Q27020041	sports_season
 Q16510064	sporting_event
 Q13406554	sports_competition
+Q53945096	group_during_sports_competition
 Q18536594	olympic_sporting_event
 Q43305660	United_States_patent
 Q47150325	calendar_day_of_a_given_year
