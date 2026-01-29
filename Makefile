@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all clean skos_subject check_subject
+.PHONY: all clean skos_subjects
 
 # -----------------------
 # Paths
@@ -23,6 +23,7 @@ CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 # -----------------------
 LOCALE ?= en
 JOBS ?= $(shell nproc)
+SITELINKS ?= 0
 RUN_DATE := $(shell date +%Y%m%d)
 COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
 export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
@@ -234,19 +235,35 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 skos_subjects: $(SUBJECT_OUTS)
 
 # Intermediate: generate label triples for a subject
-$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt: $(SUBJECTS_DIR)/%_subjects.tsv $(SKOS_LABELS_GZ)
+$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt: \
+	$(SUBJECTS_DIR)/%_subjects.tsv \
+	$(SKOS_LABELS_GZ)
 	$(call join_skos_labels,$(SKOS_LABELS_GZ),$<)
 
-# Pattern rule: one subject → one Turtle file
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).ttl: \
-	$(SUBJECTS_DIR)/%_subjects.tsv \
-	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
-	@echo "=====> Generating SKOS for subject $*…"
+# Intermediate: generate SKOS concept triples
+$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt: \
+	$(SUBJECTS_DIR)/%_subjects.tsv
+	@echo "=====> Generating SKOS concepts for subject $*…"
 	@if [ ! -f "$<" ]; then \
 	  echo "ERROR: Subject file $< missing"; exit 1; \
 	fi
-	( \
-	  $(call emit_skos_concepts,$<); \
-	  $(call emit_skos_collection,$(COLLECTION_URI)/subject/$*,$<); \
-	  cat $(SKOS_DIR)/skos_labels_$*_$(LOCALE).nt \
-	) | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core" - > $@
+	$(call emit_skos_concepts,$<) > $@
+
+# Intermediate: generate SKOS collection triples
+$(SKOS_DIR)/skos_collection_%_$(LOCALE).nt: \
+	$(SUBJECTS_DIR)/%_subjects.tsv
+	@echo "=====> Generating SKOS collection for subject $*…"
+	@if [ ! -f "$<" ]; then \
+	  echo "ERROR: Subject file $< missing"; exit 1; \
+	fi
+	$(call emit_skos_collection,$(COLLECTION_URI)/subject/$*,$<) > $@
+
+# Final: convert N-Triples → Turtle
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).ttl: \
+	$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_collection_%_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
+	@echo "=====> Converting SKOS to Turtle for subject $*…"
+	cat $^ | rapper -i ntriples -o turtle \
+	  -I "http://www.w3.org/2004/02/skos/core" \
+	  - > $@
