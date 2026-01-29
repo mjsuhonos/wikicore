@@ -63,14 +63,31 @@ SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
 # SKOS macros
 # -----------------------
 define emit_skos_concepts
-sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
+	sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
 endef
 
 define emit_skos_collection
-{ \
-  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_COLLECTION_URI)> ."; \
-  sed -E 's|(.*)|<$(1)> <$(SKOS_MEMBER_URI)> \1 .|' $(2); \
-}
+	{ \
+	  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_COLLECTION_URI)> ."; \
+	  sed -E 's|(.*)|<$(1)> <$(SKOS_MEMBER_URI)> \1 .|' $(2); \
+	}
+endef
+
+define join_skos_labels
+	pigz -dc $(1) \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join - $(2) \
+	  > $@
+endef
+
+define emit_subject_skos
+	@echo "=====> Generating SKOS for subject $(1)…"
+	$(call emit_skos_concepts,$(2)) > $@
+	$(call emit_skos_collection,$(3),$(2)) >> $@
+	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(2)) >> $@
+	cat $@ | rapper -i ntriples -o turtle \
+	  -I "http://www.w3.org/2004/02/skos/core" - \
+	  > $@.tmp && mv $@.tmp $@
 endef
 
 # -----------------------
@@ -168,10 +185,7 @@ $(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
 
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
 	@echo "=====> Joining SKOS labels with core concepts…"
-	pigz -dc $(SKOS_LABELS_GZ) \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join - $(CORE_NOSUBJECT_QIDS) \
-	  > $@
+	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(CORE_NOSUBJECT_QIDS)) > $@
 	
 # Filter out subject entities
 $(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
@@ -211,28 +225,28 @@ clean:
 # -----------------------
 # Subject-specific SKOS export
 # -----------------------
-SUBJECT ?=
-SUBJECT_FILE = $(SUBJECTS_DIR)/$(SUBJECT)_subjects.tsv
-SUBJECT_URI = http://www.wikidata.org/entity/$(SUBJECT)
-SUBJECT_COL_URI = $(COLLECTION_URI)/subject/$(SUBJECT)
-SUBJECT_OUT = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(SUBJECT).ttl
 
-skos_subject: check_subject $(SUBJECT_OUT)
+SUBJECTS ?= Q5
 
-check_subject:
-	@if [ -z "$(SUBJECT)" ]; then \
-	  echo "ERROR: SUBJECT=QID required"; exit 1; \
+SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
+  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).ttl)
+
+skos_subjects: $(SUBJECT_OUTS)
+
+# Intermediate: generate label triples for a subject
+$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt: $(SUBJECTS_DIR)/%_subjects.tsv $(SKOS_LABELS_GZ)
+	$(call join_skos_labels,$(SKOS_LABELS_GZ),$<)
+
+# Pattern rule: one subject → one Turtle file
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).ttl: \
+	$(SUBJECTS_DIR)/%_subjects.tsv \
+	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
+	@echo "=====> Generating SKOS for subject $*…"
+	@if [ ! -f "$<" ]; then \
+	  echo "ERROR: Subject file $< missing"; exit 1; \
 	fi
-	@if [ ! -f "$(SUBJECT_FILE)" ]; then \
-	  echo "ERROR: Subject file $(SUBJECT_FILE) missing"; exit 1; \
-	fi
-
-$(SUBJECT_OUT): $(SUBJECT_FILE) $(SKOS_LABELS)
-	@echo "=====> Generating SKOS for subject $(SUBJECT)…"
-	@mkdir -p $(ROOT_DIR)
-	@{ \
-	  $(call emit_skos_concepts,$(SUBJECT_FILE)); \
-	  $(call emit_skos_collection,$(SUBJECT_COL_URI),$(SUBJECT_FILE)); \
-	  grep -F "<$(SUBJECT_URI)>" $(SKOS_LABELS) || true; \
-	} | rapper -i ntriples -o turtle -I 'http://www.wikidata.org/entity/' - \
-	> $@
+	( \
+	  $(call emit_skos_concepts,$<); \
+	  $(call emit_skos_collection,$(COLLECTION_URI)/subject/$*,$<); \
+	  cat $(SKOS_DIR)/skos_labels_$*_$(LOCALE).nt \
+	) | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core" - > $@
