@@ -168,6 +168,7 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
 	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) \
+	 | LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/enwiki_qids.sorted.tsv) - \
 	 | LC_ALL=C sort -u \
 	 > $@
 
@@ -234,15 +235,22 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
+.SECONDARY: $(WORK_DIR)/%_filtered.tsv
+
+$(WORK_DIR)/%_filtered.tsv: $(SUBJECTS_DIR)/%_subjects.tsv
+	LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/enwiki_qids.sorted.tsv) $< \
+	| LC_ALL=C sort -u \
+	> $@
+
 # Intermediate: generate label triples for a subject
 $(SKOS_DIR)/skos_labels_%_$(LOCALE).nt: \
-	$(SUBJECTS_DIR)/%_subjects.tsv \
+	$(WORK_DIR)/%_filtered.tsv \
 	$(SKOS_LABELS_GZ)
 	$(call join_skos_labels,$(SKOS_LABELS_GZ),$<)
 
 # Intermediate: generate SKOS concept triples
 $(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt: \
-	$(SUBJECTS_DIR)/%_subjects.tsv
+	$(WORK_DIR)/%_filtered.tsv
 	@echo "=====> Generating SKOS concepts for subject $*…"
 	@if [ ! -f "$<" ]; then \
 	  echo "ERROR: Subject file $< missing"; exit 1; \
@@ -251,7 +259,7 @@ $(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt: \
 
 # Intermediate: generate SKOS collection triples
 $(SKOS_DIR)/skos_collection_%_$(LOCALE).nt: \
-	$(SUBJECTS_DIR)/%_subjects.tsv
+	$(WORK_DIR)/%_filtered.tsv
 	@echo "=====> Generating SKOS collection for subject $*…"
 	@if [ ! -f "$<" ]; then \
 	  echo "ERROR: Subject file $< missing"; exit 1; \
