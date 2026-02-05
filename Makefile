@@ -6,6 +6,16 @@ SHELL := /bin/bash
 .PHONY: all clean skos_subjects
 
 # -----------------------
+# Options
+# -----------------------
+LOCALE ?= en
+JOBS ?= $(shell nproc)
+SITELINKS ?= 0
+RUN_DATE := $(shell date +%Y%m%d)
+VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
+export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
+
+# -----------------------
 # Paths
 # -----------------------
 ROOT_DIR := $(PWD)
@@ -17,16 +27,6 @@ SKOS_DIR := $(WORK_DIR)/skos
 SPLIT_DIR := $(WORK_DIR)/splits
 QUERIES_DIR := $(ROOT_DIR)/queries
 CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
-
-# -----------------------
-# Options
-# -----------------------
-LOCALE ?= en
-JOBS ?= $(shell nproc)
-SITELINKS ?= 0
-RUN_DATE := $(shell date +%Y%m%d)
-COLLECTION_URI := https://wikicore.ca/$(RUN_DATE)
-export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 
 # -----------------------
 # Inputs
@@ -45,32 +45,42 @@ CONCEPT_BACKBONE := $(WORK_DIR)/concept_backbone.nt
 # -----------------------
 # SKOS outputs
 # -----------------------
-SKOS_CONCEPTS   := $(SKOS_DIR)/skos_concepts.nt
-SKOS_COLLECTION := $(SKOS_DIR)/skos_collection.nt
-SKOS_LABELS     := $(SKOS_DIR)/skos_labels_$(LOCALE).nt
-SKOS_BROADER    := $(SKOS_DIR)/skos_broader.nt
-SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_COLLECTION) $(SKOS_LABELS) $(SKOS_BROADER)
+SKOS_CONCEPTS       := $(SKOS_DIR)/skos_concepts_core.nt
+SKOS_CONCEPT_SCHEME := $(SKOS_DIR)/skos_concept_scheme_core.nt
+SKOS_LABELS         := $(SKOS_DIR)/skos_labels_core_$(LOCALE).nt
+SKOS_BROADER        := $(SKOS_DIR)/skos_broader_core.nt
+SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_CONCEPT_SCHEME) $(SKOS_LABELS) $(SKOS_BROADER)
 
 # -----------------------
 # RDF / SKOS URIs
 # -----------------------
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
+OWL_CLASS_URI         = http://www.w3.org/2002/07/owl\#Class
+
+SKOS_CORE_URI       = http://www.w3.org/2004/02/skos/core
 SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
-SKOS_COLLECTION_URI = http://www.w3.org/2004/02/skos/core\#Collection
-SKOS_MEMBER_URI     = http://www.w3.org/2004/02/skos/core\#member
 SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
+SKOS_CONCEPT_SCHEME_URI = http://www.w3.org/2004/02/skos/core\#ConceptScheme
+SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 
 # -----------------------
 # SKOS macros
 # -----------------------
+define emit_rdf_type
+	{ \
+	  echo "<$(1)> <$(RDF_TYPE_URI)> <$(OWL_CLASS_URI)> ."; \
+	  sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(1)> .|' $(2); \
+	}
+endef
+
 define emit_skos_concepts
 	sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
 endef
 
-define emit_skos_collection
+define emit_skos_concept_scheme
 	{ \
-	  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_COLLECTION_URI)> ."; \
-	  sed -E 's|(.*)|<$(1)> <$(SKOS_MEMBER_URI)> \1 .|' $(2); \
+	  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ."; \
+	  sed -E 's|(.*)|\1 <$(SKOS_INSCHEME_URI)> <$(1)> .|' $(2); \
 	}
 endef
 
@@ -84,10 +94,10 @@ endef
 define emit_subject_skos
 	@echo "=====> Generating SKOS for subject $(1)…"
 	$(call emit_skos_concepts,$(2)) > $@
-	$(call emit_skos_collection,$(3),$(2)) >> $@
+	$(call emit_skos_concept_scheme,$(3),$(2)) >> $@
 	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(2)) >> $@
 	cat $@ | rapper -i ntriples -o turtle \
-	  -I "http://www.w3.org/2004/02/skos/core" - \
+	  -I $(SKOS_CORE_URI) - \
 	  > $@.tmp && mv $@.tmp $@
 endef
 
@@ -164,15 +174,14 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 
 # -----------------------
 # 6. Filter out P31 instances
+#    Filter through Wikipedia sitelinks
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
 	@echo "=====> Filtering out P31 instances…"
 	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) \
-	 | LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/enwiki_qids.sorted.tsv) - \
+	 | LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/sitelinks_en_qids.tsv) - \
 	 | LC_ALL=C sort -u \
 	 > $@
-
-# TODO: filter through en_wikipedia sitelinks? (~250K -> 95K)
 
 # -----------------------
 # 7. Generate SKOS triples
@@ -182,8 +191,8 @@ $(SKOS_DIR)/%.nt: $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 $(SKOS_CONCEPTS): $(CORE_NOSUBJECT_QIDS)
 	$(call emit_skos_concepts,$(CORE_NOSUBJECT_QIDS)) > $@
 
-$(SKOS_COLLECTION): $(CORE_NOSUBJECT_QIDS)
-	$(call emit_skos_collection,$(COLLECTION_URI),$(CORE_NOSUBJECT_QIDS)) > $@
+$(SKOS_CONCEPT_SCHEME): $(CORE_NOSUBJECT_QIDS)
+	$(call emit_skos_concept_scheme,$(VOCAB_URI),$(CORE_NOSUBJECT_QIDS)) > $@
 
 $(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
 	@echo "=====> Joining SKOS labels with core concepts…"
@@ -201,16 +210,8 @@ $(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 # -----------------------
 $(FINAL_TTL): $(SKOS_NT)
 	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
-	cat $^ | rapper -i ntriples -o turtle -I "http://www.w3.org/2004/02/skos/core" - \
+	cat $^ | rapper -i ntriples -o turtle -I $(SKOS_CORE_URI) - \
 	> $@
-
-# TODO: generate fulltext corpus
-# eg. gzcat wikidata5m_text.txt.gz \
-#	| sort \
-# convert first column to URIs
-# filter through CORE_NOSUBJECT_QIDS (careful of encoding!)
-# awk to swap places
-#	| awk -F'\t' -v OFS='\t' '{print $2, "<http://www.wikidata.org/entity/" $1 ">"}'
 
 # -----------------------
 # Directories
@@ -235,10 +236,8 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
-.SECONDARY: $(WORK_DIR)/%_filtered.tsv
-
 $(WORK_DIR)/%_filtered.tsv: $(SUBJECTS_DIR)/%_subjects.tsv
-	LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/enwiki_qids.sorted.tsv) $< \
+	LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/sitelinks_en_qids.tsv) $< \
 	| LC_ALL=C sort -u \
 	> $@
 
@@ -257,21 +256,40 @@ $(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt: \
 	fi
 	$(call emit_skos_concepts,$<) > $@
 
-# Intermediate: generate SKOS collection triples
-$(SKOS_DIR)/skos_collection_%_$(LOCALE).nt: \
+# Intermediate: generate SKOS concept scheme triples
+$(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt: \
 	$(WORK_DIR)/%_filtered.tsv
-	@echo "=====> Generating SKOS collection for subject $*…"
+	@echo "=====> Generating SKOS concept scheme for subject $*…"
 	@if [ ! -f "$<" ]; then \
 	  echo "ERROR: Subject file $< missing"; exit 1; \
 	fi
-	$(call emit_skos_collection,$(COLLECTION_URI)/subject/$*,$<) > $@
+	$(call emit_skos_concept_scheme,$(VOCAB_URI)/subject/$*,$<) > $@
+
+.SECONDARY:
 
 # Final: convert N-Triples → Turtle
 $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).ttl: \
 	$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_collection_%_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt \
 	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
 	@echo "=====> Converting SKOS to Turtle for subject $*…"
 	cat $^ | rapper -i ntriples -o turtle \
-	  -I "http://www.w3.org/2004/02/skos/core" \
+	  -I $(SKOS_CORE_URI) \
 	  - > $@
+
+# -----------------------
+# TODO: generate fulltext corpus
+# -----------------------
+#
+# eg. gzcat wikidata5m_text.txt.gz \
+#	| sort \
+# convert first column to URIs
+# filter through CORE_NOSUBJECT_QIDS (careful of encoding!)
+# awk to swap places
+#	| awk -F'\t' -v OFS='\t' '{print $2, "<http://www.wikidata.org/entity/" $1 ">"}'
+
+
+# join source.nosync/fulltext/wd5m_uri_first.tsv \
+# working.nosync/Q16521_filtered.tsv \
+# | sed -E 's/^<([^>]+)>[[:space:]]+(.*)$/\2\t<\1>/' \
+# > source.nosync/fulltext/wd5m_wikicore-20260204-Q16521.tsv
