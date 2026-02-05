@@ -55,7 +55,7 @@ SKOS_NT := $(SKOS_CONCEPTS) $(SKOS_CONCEPT_SCHEME) $(SKOS_LABELS) $(SKOS_BROADER
 # RDF / SKOS URIs
 # -----------------------
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
-OWL_CLASS_URI         = http://www.w3.org/2002/07/owl\#Class
+OWL_CLASS_URI       = http://www.w3.org/2002/07/owl\#Class
 
 SKOS_CORE_URI       = http://www.w3.org/2004/02/skos/core
 SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
@@ -96,16 +96,13 @@ define emit_subject_skos
 	$(call emit_skos_concepts,$(2)) > $@
 	$(call emit_skos_concept_scheme,$(3),$(2)) >> $@
 	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(2)) >> $@
-	cat $@ | rapper -i ntriples -o turtle \
-	  -I $(SKOS_CORE_URI) - \
-	  > $@.tmp && mv $@.tmp $@
 endef
 
 # -----------------------
 # Default target
 # -----------------------
-FINAL_TTL := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE).ttl
-all: $(FINAL_TTL)
+FINAL_NT := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE).nt
+all: $(FINAL_NT)
 
 # -----------------------
 # 1. Extract core properties
@@ -205,13 +202,9 @@ $(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	  | sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
 	  > $@
 
-# -----------------------
-# 8. Export Turtle
-# -----------------------
-$(FINAL_TTL): $(SKOS_NT)
-	@echo "=====> Merging SKOS N-Triples and converting to Turtle…"
-	cat $^ | rapper -i ntriples -o turtle -I $(SKOS_CORE_URI) - \
-	> $@
+$(FINAL_NT): $(SKOS_NT)
+	@echo "=====> Merging SKOS N-Triples…"
+	cat $^ > $@
 
 # -----------------------
 # Directories
@@ -232,7 +225,7 @@ clean:
 SUBJECTS ?= Q5
 
 SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
-  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).ttl)
+  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
 
 skos_subjects: $(SUBJECT_OUTS)
 
@@ -267,15 +260,12 @@ $(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt: \
 
 .SECONDARY:
 
-# Final: convert N-Triples → Turtle
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).ttl: \
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt \
 	$(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt \
 	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
-	@echo "=====> Converting SKOS to Turtle for subject $*…"
-	cat $^ | rapper -i ntriples -o turtle \
-	  -I $(SKOS_CORE_URI) \
-	  - > $@
+	@echo "=====> Combining SKOS for subject $*…"
+	cat $^ > $@
 
 # -----------------------
 # TODO: generate fulltext corpus
