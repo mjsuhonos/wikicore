@@ -1,5 +1,5 @@
 # -----------------------
-# Wikidata processing pipeline (Makefile)
+# Wiki Core processing pipeline
 # -----------------------
 
 SHELL := /bin/bash
@@ -10,7 +10,6 @@ SHELL := /bin/bash
 # -----------------------
 LOCALE ?= en
 JOBS ?= $(shell nproc)
-SITELINKS ?= 0
 RUN_DATE := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
@@ -33,6 +32,7 @@ CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 # -----------------------
 PROP_DIRECT_GZ := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
 SKOS_LABELS_GZ := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
+SITELINKS_FILE := $(SOURCE_DIR)/sitelinks_$(LOCALE)_qids.tsv
 
 # -----------------------
 # Core files
@@ -62,6 +62,49 @@ SKOS_CONCEPT_SCHEME_URI = http://www.w3.org/2004/02/skos/core\#ConceptScheme
 SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 
 # -----------------------
+# Macros
+# -----------------------
+define emit_skos_concepts
+	sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
+endef
+
+define emit_skos_concept_scheme
+	echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ."
+	sed -E 's|(.*)|\1 <$(SKOS_INSCHEME_URI)> <$(1)> .|' $(2)
+endef
+
+define join_skos_labels
+	LC_ALL=C sort -u \
+	  | LC_ALL=C join - $(1)
+endef
+
+define join_sitelinks
+	LC_ALL=C join <(awk '{print $$1}' $(SITELINKS_FILE)) $(1) \
+	  | LC_ALL=C sort -u
+endef
+
+# -----------------------
+### Reusable SKOS bundle (concepts + scheme + labels)
+### args:
+###  1 = output prefix (full path, no suffix)
+###  2 = input QID/TSV file
+###  3 = scheme URI
+# -----------------------
+
+define skos_bundle
+$(1)_concepts.nt: $(2) | $(SKOS_DIR)
+	$(call emit_skos_concepts,$$<) > $$@
+
+$(1)_concept_scheme.nt: $(2) | $(SKOS_DIR)
+	$(call emit_skos_concept_scheme,$(3),$$<) > $$@
+
+$(1)_labels.nt: $(2) $(SKOS_LABELS_GZ) | $(SKOS_DIR)
+	pigz -dc $(SKOS_LABELS_GZ) \
+	  | $(call join_skos_labels,$$<) \
+	  > $$@
+endef
+
+# -----------------------
 # Default target
 # -----------------------
 FINAL_NT := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE).nt
@@ -78,8 +121,7 @@ $(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR):
 # 1. Extract core properties
 # -----------------------
 $(CORE_PROPS_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
-	@echo "=====> Extracting core properties…"
-	pigz -dc $< \
+	pigz -dc $(PROP_DIRECT_GZ) \
 	  | rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
 	  | rg -F -v '_:' \
 	  > $@
@@ -91,12 +133,10 @@ SPLIT_DONE := $(SPLIT_DIR)/.split_done
 CHUNKS := $(wildcard $(SPLIT_DIR)/chunk_*)
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
-	@echo "=====> Splitting core properties into chunks…"
 	gsplit -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
 $(CONCEPT_BACKBONE): $(SPLIT_DONE) | $(SUBJECTS_DIR)
-	@echo "=====> Partitioning chunks and generating backbone…"
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $(JOBS) --eta --halt now,fail=1 \
 	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
@@ -108,23 +148,24 @@ SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE   := $(SUBJECTS_DIR)/.subjects_individually_sorted
 
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
-	@echo "=====> Sorting and deduplicating individual subject files…"
 	parallel --bar --jobs $(JOBS) \
 	  'LC_ALL=C sort -u -o {1} {1}' \
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
-# NB: this includes ALL instance subjects (including p31_other)
+# =*=*=*=*=*=*=*=*=*=*=*=*
+# NOTE: this includes ALL instance subjects INCLUDING p31_other.subjects.tsv
+#
+# to exclude p31_other.subjects.tsv, use "$(SUBJECTS_DIR)/Q*subjects.tsv"
+# =*=*=*=*=*=*=*=*=*=*=*=*
 $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
-	@echo "=====> Merging all sorted subject files into $@ …"
 	LC_ALL=C sort -m -u \
-	  $(SUBJECTS_DIR)/Q*subjects.tsv > $@
+	  $(SUBJECTS_DIR)/*subjects.tsv > $@
 
 # -----------------------
 # 4. Load backbone into Jena
 # -----------------------
 $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
-	@echo "=====> Loading backbone into Jena…"
 	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
 	touch $@
 
@@ -132,7 +173,6 @@ $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 # 5. Materialize + export core concepts
 # -----------------------
 $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
-	@echo "=====> Materializing core concepts…"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_graph.rq"
 	tdb2.tdbquery --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
 	 | grep -F '<http://www.wikidata.org/entity/' \
@@ -144,61 +184,23 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 #    Filter through Wikipedia sitelinks
 # -----------------------
 $(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED)
-	@echo "=====> Filtering out P31 instances…"
 	LC_ALL=C join -t '	' -1 1 -2 1 -v 1 $< $(SUBJECTS_SORTED) \
-	 | LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/sitelinks_en_qids.tsv) - \
-	 | LC_ALL=C sort -u \
-	 > $@
+	  | $(call join_sitelinks,-) \
+	  > $@
 
 # -----------------------
 # 7. Generate SKOS triples
 # -----------------------
 
-define emit_skos_concepts
-	sed -E 's|(.*)|\1 <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_URI)> .|' $(1)
-endef
+$(eval $(call skos_bundle,\
+  $(SKOS_DIR)/skos,\
+  $(CORE_NOSUBJECT_QIDS),\
+  $(VOCAB_URI)))
 
-define emit_skos_concept_scheme
-	{ \
-	  echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ."; \
-	  sed -E 's|(.*)|\1 <$(SKOS_INSCHEME_URI)> <$(1)> .|' $(2); \
-	}
-endef
-
-define join_skos_labels
-	pigz -dc $(1) \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join - $(2) \
-	  > $@
-endef
-
-define emit_subject_skos
-	@echo "=====> Generating SKOS for subject $(1)…"
-	$(call emit_skos_concepts,$(2)) > $@
-	$(call emit_skos_concept_scheme,$(3),$(2)) >> $@
-	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(2)) >> $@
-endef
-
-$(SKOS_DIR)/%.nt: $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
-
-$(SKOS_CONCEPTS): $(CORE_NOSUBJECT_QIDS)
-	$(call emit_skos_concepts,$(CORE_NOSUBJECT_QIDS)) > $@
-
-$(SKOS_CONCEPT_SCHEME): $(CORE_NOSUBJECT_QIDS)
-	$(call emit_skos_concept_scheme,$(VOCAB_URI),$(CORE_NOSUBJECT_QIDS)) > $@
-
-$(SKOS_LABELS): $(CORE_NOSUBJECT_QIDS) $(SKOS_LABELS_GZ)
-	@echo "=====> Joining SKOS labels with core concepts…"
-	$(call join_skos_labels,$(SKOS_LABELS_GZ),$(CORE_NOSUBJECT_QIDS)) > $@
-	
-$(SKOS_BROADER): $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
-	@echo "=====> Filtering backbone triples and applying SKOS broader URI…"
-	LC_ALL=C join $(CONCEPT_BACKBONE) $(CORE_NOSUBJECT_QIDS) \
-	  | sed -E 's|<[^>]+>|<$(SKOS_BROADER_URI)>|2' \
-	  > $@
-
-$(FINAL_NT): $(SKOS_NT)
-	@echo "=====> Merging SKOS N-Triples…"
+$(FINAL_NT): \
+	$(SKOS_DIR)/skos_concepts.nt \
+	$(SKOS_DIR)/skos_concept_scheme.nt \
+	$(SKOS_DIR)/skos_labels.nt
 	cat $^ > $@
 
 # -----------------------
@@ -208,7 +210,7 @@ clean:
 	rm -rf $(WORK_DIR)
 
 # -----------------------
-# Subject-specific SKOS export
+# Generate SKOS subject (instance) vocabs
 # -----------------------
 
 SUBJECTS ?= Q5
@@ -219,32 +221,22 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 skos_subjects: $(SUBJECT_OUTS)
 
 $(WORK_DIR)/%_filtered.tsv: $(SUBJECTS_DIR)/%_subjects.tsv
-	LC_ALL=C join <(awk '{print $$1}' $(SOURCE_DIR)/sitelinks_en_qids.tsv) $< \
-	| LC_ALL=C sort -u \
-	> $@
+	$(call join_sitelinks,$<) > $@
 
-# Intermediate: generate SKOS concept triples
-$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt: $(WORK_DIR)/%_filtered.tsv
-	@echo "=====> Generating SKOS concepts for subject $*…"
-	$(call emit_skos_concepts,$<) > $@
-
-# Intermediate: generate SKOS concept scheme triples
-$(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt: $(WORK_DIR)/%_filtered.tsv
-	@echo "=====> Generating SKOS concept scheme for subject $*…"
-	$(call emit_skos_concept_scheme,$(VOCAB_URI)/subject/$*,$<) > $@
-
-# Intermediate: generate label triples for a subject
-$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt: $(WORK_DIR)/%_filtered.tsv $(SKOS_LABELS_GZ)
-	$(call join_skos_labels,$(SKOS_LABELS_GZ),$<)
+$(foreach S,$(SUBJECTS),\
+  $(eval $(call skos_bundle,\
+    $(SKOS_DIR)/skos_$(S)_$(LOCALE),\
+    $(WORK_DIR)/$(S)_filtered.tsv,\
+    $(VOCAB_URI)/subject/$(S))))
 
 .SECONDARY:
 
 $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
-	$(SKOS_DIR)/skos_concepts_%_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_concept_scheme_%_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_labels_%_$(LOCALE).nt
-	@echo "=====> Merging SKOS N-Triples for subject $*…"
+	$(SKOS_DIR)/skos_%_$(LOCALE)_concepts.nt \
+	$(SKOS_DIR)/skos_%_$(LOCALE)_concept_scheme.nt \
+	$(SKOS_DIR)/skos_%_$(LOCALE)_labels.nt
 	cat $^ > $@
+
 
 # -----------------------
 # TODO: generate fulltext corpus
