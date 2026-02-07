@@ -69,8 +69,8 @@ define emit_skos_concepts
 endef
 
 define emit_skos_concept_scheme
-	echo "<$(1)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ."
-	sed -E 's|(.*)|\1 <$(SKOS_INSCHEME_URI)> <$(1)> .|' $(2)
+	echo "<$(strip $(1))> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ."
+	sed -E 's|(.*)|\1 <$(SKOS_INSCHEME_URI)> <$(strip $(1))> .|' $(2)
 endef
 
 define join_skos_labels
