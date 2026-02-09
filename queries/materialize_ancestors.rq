@@ -1,0 +1,15 @@
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX :   <http://example.org/ontology/>
+
+INSERT {
+  ?entity :ancestor1 ?a1 .
+}
+WHERE {
+  {
+    ?entity wdt:P279 ?a1 .
+  }
+  UNION
+  {
+    ?entity wdt:P361 ?a1 .
+  }
+}
