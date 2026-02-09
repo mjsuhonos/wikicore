@@ -175,7 +175,7 @@ $(SKOS_CONCEPT_SCHEME): $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$(VOCAB_URI)" \
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
-# Broader statements (FIXME: takes a long time)
+# Broader statements
 $(SKOS_BROADER): $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	LC_ALL=C sort -u $(CONCEPT_BACKBONE) \
 	  | LC_ALL=C join $(CORE_NOSUBJECT_QIDS) - \
@@ -205,24 +205,31 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
-$(WORK_DIR)/%_filtered.tsv: $(SUBJECTS_DIR)/%_subjects.tsv
-	$(call join_sitelinks,$<) > $@
+.PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
+           $(SKOS_DIR)/skos_%_concept_scheme.nt \
+           $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt
 
-.SECONDARY:
+$(WORK_DIR)/%_filtered.tsv: $(SUBJECTS_DIR)/%_subjects.tsv $(SITELINKS_FILE) | $(WORK_DIR)
+	LC_ALL=C join $< $(SITELINKS_FILE) > $@
 
-$(SKOS_DIR)/skos_%_concepts.nt: $(WORK_DIR)/%_filtered.tsv
-	$(call skos_concepts,$<,$@)
+$(SKOS_DIR)/skos_%_concepts.nt: $(WORK_DIR)/%_filtered.tsv | $(SKOS_DIR)
+	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
+	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $< > $@
 
-$(SKOS_DIR)/skos_%_concept_scheme.nt: $(WORK_DIR)/%_filtered.tsv
-	$(call skos_concept_scheme,$<,$@)
+$(SKOS_DIR)/skos_%_concept_scheme.nt: $(WORK_DIR)/%_filtered.tsv | $(SKOS_DIR)
+	@echo "<$(VOCAB_URI)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ." > $@
+	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$(VOCAB_URI)" \
+	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
-$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: $(WORK_DIR)/%_filtered.tsv
-	$(call skos_labels,$<,$@)
+$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
+	$(SKOS_LABELS_NT) $(WORK_DIR)/%_filtered.tsv | $(SKOS_DIR)
+	awk 'NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }' \
+	  $(WORK_DIR)/$*_filtered.tsv $(SKOS_LABELS_NT) > $@
 
 $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_concepts.nt \
 	$(SKOS_DIR)/skos_%_concept_scheme.nt \
-	$(SKOS_DIR)/skos_%_labels.nt
+	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt
 	cat $^ > $@
 
 # -----------------------
