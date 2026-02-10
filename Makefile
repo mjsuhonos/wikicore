@@ -104,7 +104,7 @@ $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 
 $(CONCEPT_BACKBONE): $(SPLIT_DONE) | $(SUBJECTS_DIR)
 	ls $(SPLIT_DIR)/chunk_* | \
-	  parallel -j $(JOBS) --eta --halt now,fail=1 \
+	  parallel -j $(JOBS) --bar --halt now,fail=1 \
 	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
 # -----------------------
@@ -126,14 +126,14 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded
 	  > $@
 
 # -----------------------
-# 5. Prepare subject vocabularies (FIXME: takes a long time)
+# 5. Prepare subject vocabularies
 # -----------------------
 SUBJECTS_SORTED := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE   := $(SUBJECTS_DIR)/.subjects_individually_sorted
 
 # Sort and deduplicate each per-subject TSV
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
-	parallel --bar --jobs $(JOBS) 'LC_ALL=C sort -u -o {1} {1}' ::: $(SUBJECTS_DIR)/*subjects.tsv
+	parallel -j $(JOBS) --bar --halt now,fail=1 'LC_ALL=C sort -u -o {1} {1}' ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
 # Claim per-subject TSVs as outputs of SUBJECTS_DONE
