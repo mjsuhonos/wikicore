@@ -41,7 +41,7 @@
     /* Header / Hero */
     .header {
       text-align: center;
-      margin-bottom: 5rem;
+      margin-bottom: 2rem;
     }
 
     .logo {
@@ -119,6 +119,25 @@
       font-size: 0.95rem;
       color: var(--muted);
     }
+	
+  .github-link {
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #0366d6;          /* GitHub blue */
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid #0366d6;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .github-link:hover {
+    background-color: #0366d6;
+    color: #fff;
+  }
 
     footer {
       text-align: center;
@@ -143,9 +162,18 @@
         classification, indexing, and discovery.
       </p>
     </header>
+	
+	<!-- GitHub link below opening text, subtle badge style -->
+	<div style="text-align:center;">
+	  <a href="https://github.com/mjsuhonos/wikicore" target="_blank" class="github-link">
+	    <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" 
+	         alt="GitHub" style="width:20px; height:20px; vertical-align:middle; margin-right:6px;">
+	    View on GitHub
+	  </a>
+	</div>
+	
 
     <section class="features">
-      <!-- <h2>What Wiki Core Provides</h2> -->
 
       <div class="feature-grid">
         <div class="feature-card">

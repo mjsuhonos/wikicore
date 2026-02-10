@@ -46,7 +46,7 @@ Unlike these systems, Wiki Core **leverages Wikidata identifiers as its backbone
 
 ## License
 
-Wiki Core is licensed under **GPLv3**. See [LICENSE](link) for details.
+Wiki Core is licensed under **GPLv3**. See [LICENSE](https://github.com/mjsuhonos/wikicore?tab=GPL-3.0-1-ov-file) for details.
 
 ## References
 
@@ -59,3 +59,8 @@ Wiki Core is licensed under **GPLv3**. See [LICENSE](link) for details.
 ## Getting Started and Contributing
 
 More to come...
+
+<p align="center">
+  Made with love in Canada
+  <img src="https://flagcdn.com/w20/ca.png" alt="Canada" width="20" height="10" style="vertical-align:middle; margin-right:6px;">
+</p>
