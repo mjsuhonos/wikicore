@@ -179,7 +179,7 @@ $(SKOS_CONCEPT_SCHEME): $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 $(SKOS_BROADER): $(CORE_NOSUBJECT_QIDS) | $(SKOS_DIR)
 	LC_ALL=C sort -u $(CONCEPT_BACKBONE) \
 	  | LC_ALL=C join $(CORE_NOSUBJECT_QIDS) - \
-	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$2 " ." }' \
+	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
 # -----------------------
@@ -225,6 +225,8 @@ $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	$(SKOS_LABELS_NT) $(WORK_DIR)/%_filtered.tsv | $(SKOS_DIR)
 	awk 'NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }' \
 	  $(WORK_DIR)/$*_filtered.tsv $(SKOS_LABELS_NT) > $@
+
+# TODO: skos:broader
 
 $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_concepts.nt \
