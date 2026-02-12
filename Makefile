@@ -31,6 +31,9 @@ SKOS_LABELS_GZ   := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
 # TODO: replace this with a WikiData JSON download file and use the jq command to parse it
 SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_$(LOCALE)_qids.tsv
 
+# WIP BUCKETS
+BUCKETS          := $(wildcard ./buckets/*.tsv)
+
 # -----------------------
 # Working files
 # -----------------------
@@ -105,7 +108,9 @@ $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 $(CONCEPT_BACKBONE): $(SPLIT_DONE) | $(SUBJECTS_DIR)
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $(JOBS) --bar --halt now,fail=1 \
-	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
+	    'for bucket_file in $(BUCKETS); do \
+	         python3 $(ROOT_DIR)/partition_chunks.py {} $$bucket_file $(WORK_DIR) $(SUBJECTS_DIR); \
+	     done'
 
 # -----------------------
 # 3. Load backbone into Jena
