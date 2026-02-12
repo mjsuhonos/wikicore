@@ -1,0 +1,12 @@
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX wd:  <http://www.wikidata.org/entity/>
+
+# Get all classes that are descendants of Q123691918
+# This query will be parameterized - replace Q123691918 with actual QID
+
+SELECT DISTINCT ?class
+WHERE {
+  # All classes that are descendants via P279 (subclass) or P361 (part-of)
+  ?class (wdt:P279|wdt:P361)+ wd:Q123691918 .
+}
+ORDER BY ?class
