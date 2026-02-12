@@ -1,0 +1,12 @@
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX wd:  <http://www.wikidata.org/entity/>
+
+# Discover top-level buckets: entities 1-2 hops from root
+# ROOT: Q35120 (entity) - or customize to your root concept
+
+SELECT DISTINCT ?bucket
+WHERE {
+  # Entities that are 1 or 2 hops away via P279 (subclass) or P361 (part-of)
+  ?bucket (wdt:P279|wdt:P361){1,2} wd:Q35120 .
+}
+ORDER BY ?bucket
