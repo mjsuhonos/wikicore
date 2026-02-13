@@ -241,12 +241,13 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 
 # Filter out subjects from core concepts
 # (Concepts that appear as subjects/instances are removed from the vocabulary)
-$(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED) | $(WORK_DIR)
+# Then filter to only keep concepts that have Wikipedia articles (sitelinks)
+$(CORE_NOSUBJECT_QIDS): $(CORE_CONCEPTS_QIDS) $(SUBJECTS_SORTED) $(SITELINKS_FILE) | $(WORK_DIR)
 	@echo "========================================"
-	@echo "Step 8c: Filtering concepts (removing subjects)..."
+	@echo "Step 8c: Filtering concepts (removing subjects, keeping sitelinks)..."
 	@echo "========================================"
 	@echo "Before filtering:" $$(wc -l < $(CORE_CONCEPTS_QIDS)) "concepts"
-	LC_ALL=C join -v 1 $< $(SUBJECTS_SORTED) > $@
+	LC_ALL=C join -v 1 $< $(SUBJECTS_SORTED) | LC_ALL=C join - $(SITELINKS_FILE) > $@
 	@echo "After filtering: " $$(wc -l < $@) "concepts"
 	@echo "✓ Done: $@"
 
