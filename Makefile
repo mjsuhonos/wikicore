@@ -40,6 +40,8 @@ SPLIT_DIR        := $(WORK_DIR)/splits
 SUBJECTS_DIR     := $(WORK_DIR)/subjects
 SUBJECTS_SORTED  := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE    := $(SUBJECTS_DIR)/.subjects_individually_sorted
+LABELS_SPLIT_DIR  := $(WORK_DIR)/label_splits
+LABELS_SPLIT_DONE := $(LABELS_SPLIT_DIR)/.labels_split_done
 
 # -----------------------
 # Core files
@@ -77,7 +79,7 @@ all: $(FINAL_NT)
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR):
+$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -146,10 +148,14 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED)
 	  > $@
 
 # -----------------------
-# 6. Extract localized labels (for re-use)
+# 6. Extract and split localized labels
 # -----------------------
 $(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) > $@
+
+$(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
+	gsplit -n l/$(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
+	@touch $@
 
 # -----------------------
 # 7. Generate SKOS subject (instance) vocabs
@@ -178,9 +184,12 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DI
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
-	$(SKOS_LABELS_NT) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	awk 'NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }' \
-	  $(SUBJECTS_DIR)/$*_subjects.tsv $(SKOS_LABELS_NT) > $@
+	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
+	parallel -j $(JOBS) --bar --halt now,fail=1 \
+	  'awk '\''NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }'\'' \
+	    $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
+	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
+	  | LC_ALL=C sort -u > $@
 
 $(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	LC_ALL=C sort -u $(CONCEPT_BACKBONE) \
