@@ -46,14 +46,10 @@ LABELS_SPLIT_DONE := $(LABELS_SPLIT_DIR)/.labels_split_done
 # -----------------------
 # Core files
 # -----------------------
-CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
-CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
+CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
 SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
-
-# -----------------------
-# SKOS outputs
-# -----------------------
+CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 
 # -----------------------
 # RDF / SKOS URIs
@@ -138,13 +134,14 @@ $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 # -----------------------
 # 5. Materialize + export core concepts
 # -----------------------
-$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED)
+$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FILE)
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
 	tdb2.tdbquery  --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
 	  | grep -F '<http://www.wikidata.org/entity/' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
+	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) \
 	  > $@
 
 # -----------------------
