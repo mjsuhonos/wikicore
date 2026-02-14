@@ -45,7 +45,7 @@ SUBJECTS_DONE    := $(SUBJECTS_DIR)/.subjects_individually_sorted
 # Core files
 # -----------------------
 CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
-CORE_CONCEPTS_QIDS  := $(WORK_DIR)/core_subjects.tsv
+CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
 SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
 
@@ -168,23 +168,23 @@ skos_subjects: $(SUBJECT_OUTS)
            $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
            $(SKOS_DIR)/skos_%_broader.nt
 
-$(SKOS_DIR)/skos_%_concepts.nt: $(WORK_DIR)/%_subjects.tsv | $(SKOS_DIR)
+$(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
 	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $< > $@
 
-$(SKOS_DIR)/skos_%_concept_scheme.nt: $(WORK_DIR)/%_subjects.tsv | $(SKOS_DIR)
+$(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	@echo "<$(VOCAB_URI)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ." > $@
 	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$(VOCAB_URI)" \
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
-	$(SKOS_LABELS_NT) $(WORK_DIR)/%_subjects.tsv | $(SKOS_DIR)
+	$(SKOS_LABELS_NT) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	awk 'NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }' \
-	  $(WORK_DIR)/$*_subjects.tsv $(SKOS_LABELS_NT) > $@
+	  $(SUBJECTS_DIR)/$*_subjects.tsv $(SKOS_LABELS_NT) > $@
 
-$(SKOS_DIR)/skos_%_broader.nt: $(WORK_DIR)/%_subjects.tsv | $(SKOS_DIR)
+$(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	LC_ALL=C sort -u $(CONCEPT_BACKBONE) \
-	  | LC_ALL=C join $(WORK_DIR)/$*_subjects.tsv - \
+	  | LC_ALL=C join $(SUBJECTS_DIR)/$*_subjects.tsv - \
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
