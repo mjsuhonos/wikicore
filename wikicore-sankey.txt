@@ -1,0 +1,82 @@
+// WikiCore subject filtering pipeline — Sankey flow diagram
+// Counts reflect unique subjects (QIDs) after sitelink filtering.
+// One subject may appear in multiple occupation/class groups.
+//
+// Source [AMOUNT] Target
+
+// ── Level 1: total filtered subjects ──────────────────────────────────────
+Wikidata [9718047] Filtered Subjects
+
+// ── Level 2: split by type ────────────────────────────────────────────────
+Filtered Subjects [2106826] Q5 Humans
+Filtered Subjects [4181978] P31 Unclassified
+Filtered Subjects [3399735] Named Classes
+Filtered Subjects [29508] Core Taxonomy
+
+// ── Level 3a: Q5 Humans → occupation groups ───────────────────────────────
+// (unique subjects per group file; one person may appear in multiple groups)
+Q5 Humans [690257] Sports
+Q5 Humans [341619] Politics
+Q5 Humans [186885] Film
+Q5 Humans [176881] Literature
+Q5 Humans [169254] Science
+Q5 Humans [146976] Music
+Q5 Humans [112919] Arts
+Q5 Humans [101441] Education
+Q5 Humans [84567] Media
+Q5 Humans [80843] Business
+Q5 Humans [78448] Law
+Q5 Humans [73900] Military
+Q5 Humans [62283] Religion
+Q5 Humans [46684] Engineering
+Q5 Humans [42700] Medicine
+Q5 Humans [32355] Activism
+Q5 Humans [30558] Misc
+Q5 Humans [5868] Genealogy
+Q5 Humans [1050] Other
+Q5 Humans [167451] Unmatched
+
+// ── Level 3b: Named Classes → class groups ────────────────────────────────
+// (sum of unique subjects across Q*_subjects.tsv files for each group;
+//  one item may appear in multiple groups; wikimedia has 0 — filtered by sitelinks)
+Named Classes [577240] science
+Named Classes [347174] music
+Named Classes [299797] sports
+Named Classes [212189] village
+Named Classes [181801] film
+Named Classes [181114] community
+Named Classes [162632] organization
+Named Classes [161123] building
+Named Classes [115307] railway
+Named Classes [109340] television
+Named Classes [96214] literary
+Named Classes [93497] name
+Named Classes [92173] water
+Named Classes [82858] military
+Named Classes [80530] school
+Named Classes [80156] media
+Named Classes [67822] political
+Named Classes [67479] city
+Named Classes [66039] district
+Named Classes [60326] municipality
+Named Classes [59464] soccer
+Named Classes [57774] commune
+Named Classes [46900] transport
+Named Classes [46848] astronomy
+Named Classes [45941] town
+Named Classes [44985] recurring
+Named Classes [44375] religion
+Named Classes [43412] cultural
+Named Classes [41005] mountain
+Named Classes [40755] geography
+Named Classes [39959] video
+Named Classes [36402] historic
+Named Classes [35288] aircraft
+Named Classes [32476] other
+Named Classes [31144] olympic
+Named Classes [29881] election
+Named Classes [25473] technology
+Named Classes [23387] character
+Named Classes [19117] group
+Named Classes [18794] language
+Named Classes [8240] comic
