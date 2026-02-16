@@ -166,7 +166,7 @@ make <target> [OPTIONS]
 |--------|-------------|
 | `skos_subjects SUBJECTS='Q5 Q532'` | Build SKOS for specific QIDs |
 | `skos_class CLASS_FILE=classes/aircraft.tsv` | Build combined `.nt` for a single class |
-| `skos_occupation OCC_FILE=occupations/engineer.tsv` | Build combined `.nt` for a single occupation |
+| `skos_occupation OCC_FILE=occupations/engineer.tsv` | Build combined `.nt` for a single occupation (output prefixed `occ-`) |
 
 **Options:**
 
