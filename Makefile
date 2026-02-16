@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all core subjects classes skos_subjects skos_class help
+.PHONY: all core subjects classes skos_subjects skos_class turtle help
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -17,6 +17,7 @@ help:
 	@echo "  all                           Run core + subjects + classes"
 	@echo "  skos_subjects SUBJECTS='...'  Build SKOS for specific QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class CLASS_FILE=<path>  Build combined .nt for a single classes/ TSV"
+	@echo "  turtle                        Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo "  clean                         Remove all working files"
 	@echo ""
 	@echo "Options:"
@@ -263,6 +264,27 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
+
+# -----------------------
+# Convert .nt files to compressed Turtle
+# -----------------------
+EXISTING_NTS := $(wildcard $(ROOT_DIR)/wikicore-*.nt)
+TURTLE_GZS   := $(EXISTING_NTS:.nt=.ttl.gz)
+
+RIOT_PREFIXES := \
+  --prefix skos=http://www.w3.org/2004/02/skos/core# \
+  --prefix rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns# \
+  --prefix rdfs=http://www.w3.org/2000/01/rdf-schema# \
+  --prefix owl=http://www.w3.org/2002/07/owl# \
+  --prefix xsd=http://www.w3.org/2001/XMLSchema# \
+  --prefix wd=http://www.wikidata.org/entity/ \
+  --prefix wikicore=https://wikicore.ca/
+
+%.ttl.gz: %.nt
+	riot --output=turtle $(RIOT_PREFIXES) $< | pigz -p $(JOBS) > $@
+	@echo "Generated $@"
+
+turtle: $(TURTLE_GZS)
 
 # -----------------------
 # Clean
