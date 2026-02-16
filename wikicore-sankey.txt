@@ -5,12 +5,12 @@
 // Source [AMOUNT] Target
 
 // ── Level 0: sitelink filtering ───────────────────────────────────────────
-Wikidata [106509289] No English Sitelink
-Wikidata [10150254] Has English Sitelink
+//Wikidata [106509289] No English Sitelink
+//Wikidata [10150254] Has English Sitelink
 
 // Of the sitelinked set, some fall outside scope (no P31 or irrelevant)
-Has English Sitelink [432207] Out of Scope
-Has English Sitelink [9718047] Filtered Subjects
+//Has English Sitelink [432207] Out of Scope
+//Has English Sitelink [9718047] Filtered Subjects
 
 // ── Level 1: split by type ────────────────────────────────────────────────
 Filtered Subjects [2106826] Q5 Humans
