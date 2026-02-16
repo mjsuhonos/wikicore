@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_class skos_occupation turtle help
+.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_occ_subjects skos_class skos_occupation turtle clean distclean help
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -22,7 +22,8 @@ help:
 	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
 	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV (output prefixed occ-)"
 	@echo "  turtle                              Convert all .nt files to compressed Turtle (.ttl.gz)"
-	@echo "  clean                         Remove all working files"
+	@echo "  clean                               Remove working files"
+	@echo "  distclean                           Remove working files and all generated .nt/.ttl.gz"
 	@echo ""
 	@echo "Options:"
 	@echo "  LOCALE=<lang>   Output language (default: en)"
@@ -88,7 +89,6 @@ CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 # RDF / SKOS URIs
 # -----------------------
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
-SKOS_CORE_URI       = http://www.w3.org/2004/02/skos/core
 SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
 SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
 SKOS_CONCEPT_SCHEME_URI = http://www.w3.org/2004/02/skos/core\#ConceptScheme
@@ -148,7 +148,6 @@ $(CORE_PROPS_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
 # 2. Split + partition core properties
 # -----------------------
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
-CHUNKS := $(wildcard $(SPLIT_DIR)/chunk_*)
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 	gsplit -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
@@ -231,15 +230,9 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
-# -----------------------
-# 7b. Generate SKOS for individual occupation slugs
-# eg. make skos_occ_subjects SUBJECTS="electricalengineer_1376 civilengineer_2907"
-# -----------------------
-
-OCC_SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
-  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
-
-skos_occ_subjects: $(OCC_SUBJECT_OUTS)
+# skos_occ_subjects is an alias — slug-named NTs use the same output path as
+# QID-named NTs, so skos_subjects handles both (SUBJECTS= accepts slugs or QIDs)
+skos_occ_subjects: skos_subjects
 
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
@@ -286,8 +279,6 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 
 CLASS_FILE  ?=
 CLASS_NAME   = $(basename $(notdir $(CLASS_FILE)))
-CLASS_QIDS   = $(if $(CLASS_FILE),$(shell awk '{print $$1}' $(CLASS_FILE)),)
-CLASS_PARTS  = $(foreach Q,$(CLASS_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 CLASS_NT     = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
 
 skos_class:
@@ -331,8 +322,6 @@ $(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(eval $(call OCC_SUBJ_RULE,$(S))))
 
 OCC_FILE   ?=
 OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
-OCC_SLUGS   = $(if $(OCC_FILE),$(shell awk '{print $$2}' $(OCC_FILE)),)
-OCC_PARTS   = $(foreach S,$(OCC_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
 OCC_NT      = $(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(OCC_NAME)-$(LOCALE).nt
 
 skos_occupation:
@@ -381,6 +370,9 @@ turtle: $(TURTLE_GZS)
 # -----------------------
 clean:
 	rm -rf $(WORK_DIR)
+
+distclean: clean
+	rm -f $(ROOT_DIR)/wikicore-*.nt $(ROOT_DIR)/wikicore-*.ttl.gz
 
 # -----------------------
 # TODO: generate fulltext corpus
