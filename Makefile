@@ -20,7 +20,7 @@ help:
 	@echo "  skos_subjects SUBJECTS='...'        Build SKOS for specific QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_occ_subjects SUBJECTS='...'    Build SKOS for specific occupation slugs (eg. 'electricalengineer_1376')"
 	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
-	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV"
+	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV (output prefixed occ-)"
 	@echo "  turtle                              Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo "  clean                         Remove all working files"
 	@echo ""
@@ -113,7 +113,7 @@ ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(ROOT_DIR)/wikicore-$(RUN_
 # All occupation TSV files and their derived targets
 ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
 ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
-ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).nt)
+ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
 ALL_OCC_SUBJECT_SLUGS  := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$2}' $(F))))
 ALL_OCC_SUBJECT_NTS    := $(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
 
@@ -313,17 +313,16 @@ $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 # eg. wikicore-DATE-electricalengineer_1376-LOCALE.nt <- wikicore-DATE-Q1326886-LOCALE.nt
 # -----------------------
 
+# One rule per unique slug; collects all QIDs that map to that slug across all
+# occupation TSVs (handles cases where multiple QIDs share the same slug).
 define OCC_SUBJ_RULE
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(2)-$(LOCALE).nt: \
-    $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt
-	cp $$< $$@
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
+    $$(foreach Q,$$(shell awk '$$$$2 == "$(1)" {print $$$$1}' $(ALL_OCC_FILES)),\
+      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt)
+	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
-$(foreach F,$(ALL_OCC_FILES),\
-  $(foreach PAIR,$(shell awk '{print $$1 "@@" $$2}' $(F)),\
-    $(eval $(call OCC_SUBJ_RULE,\
-      $(word 1,$(subst @@, ,$(PAIR))),\
-      $(word 2,$(subst @@, ,$(PAIR)))))))
+$(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(eval $(call OCC_SUBJ_RULE,$(S))))
 
 # -----------------------
 # 10. Generate SKOS vocab from an occupations/ TSV
@@ -334,7 +333,7 @@ OCC_FILE   ?=
 OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
 OCC_SLUGS   = $(if $(OCC_FILE),$(shell awk '{print $$2}' $(OCC_FILE)),)
 OCC_PARTS   = $(foreach S,$(OCC_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
-OCC_NT      = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).nt
+OCC_NT      = $(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(OCC_NAME)-$(LOCALE).nt
 
 skos_occupation:
 ifndef OCC_FILE
@@ -344,8 +343,9 @@ endif
 
 # Per-occupation combined NTs — one rule per occupations/*.tsv (used by skos_occupation and make occupations)
 # Depends on slug-named individual NTs (col 2), not QIDs (col 1)
+# Prefixed with "occ-" to avoid collision with same-named classes/ targets
 define OCC_RULE
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(1)-$(LOCALE).nt: \
     $$(foreach S,$$(shell awk '{print $$$$2}' $(ROOT_DIR)/occupations/$(1).tsv),\
       $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(S)-$(LOCALE).nt)
 	cat $$^ > $$@
