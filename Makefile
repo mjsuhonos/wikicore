@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all core subjects classes skos_subjects skos_class turtle help
+.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_class skos_occupation turtle help
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -11,13 +11,17 @@ help:
 	@echo "Usage: make <target> [OPTIONS]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  core                          Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  subjects                      Build one .nt per QID across all classes/ TSVs"
-	@echo "  classes                       Build one combined .nt per classes/ TSV"
-	@echo "  all                           Run core + subjects + classes"
-	@echo "  skos_subjects SUBJECTS='...'  Build SKOS for specific QIDs (eg. 'Q5 Q532')"
-	@echo "  skos_class CLASS_FILE=<path>  Build combined .nt for a single classes/ TSV"
-	@echo "  turtle                        Convert all .nt files to compressed Turtle (.ttl.gz)"
+	@echo "  core                                Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
+	@echo "  subjects                            Build one .nt per QID across all classes/ TSVs"
+	@echo "  occ_subjects                        Build one .nt per slug across all occupations/ TSVs"
+	@echo "  classes                             Build one combined .nt per classes/ TSV"
+	@echo "  occupations                         Build one combined .nt per occupations/ TSV"
+	@echo "  all                                 Run core + subjects + occ_subjects + classes + occupations"
+	@echo "  skos_subjects SUBJECTS='...'        Build SKOS for specific QIDs (eg. 'Q5 Q532')"
+	@echo "  skos_occ_subjects SUBJECTS='...'    Build SKOS for specific occupation slugs (eg. 'electricalengineer_1376')"
+	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
+	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV"
+	@echo "  turtle                              Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo "  clean                         Remove all working files"
 	@echo ""
 	@echo "Options:"
@@ -28,6 +32,8 @@ help:
 	@echo "  make core"
 	@echo "  make skos_subjects SUBJECTS='Q5 Q532'"
 	@echo "  make skos_class CLASS_FILE=classes/aircraft.tsv"
+	@echo "  make skos_occ_subjects SUBJECTS='electricalengineer_1376 civilengineer_2907'"
+	@echo "  make skos_occupation OCC_FILE=occupations/engineering.tsv"
 
 # -----------------------
 # Options
@@ -46,6 +52,8 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 QUERIES_DIR      := $(ROOT_DIR)/queries
 CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
+OCC_NAMES_FILE   := $(WORK_DIR)/occ_names.tsv
+ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
 
 # -----------------------
 # Inputs
@@ -102,13 +110,24 @@ ALL_CLASS_NTS     := $(foreach C,$(ALL_CLASS_NAMES),$(ROOT_DIR)/wikicore-$(RUN_D
 ALL_SUBJECT_QIDS  := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $$1}' $(F))))
 ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
+# All occupation TSV files and their derived targets
+ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
+ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
+ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).nt)
+ALL_OCC_SUBJECT_SLUGS  := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$2}' $(F))))
+ALL_OCC_SUBJECT_NTS    := $(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
+
 core: $(FINAL_NT)
 
 subjects: $(ALL_SUBJECT_NTS)
 
+occ_subjects: $(ALL_OCC_SUBJECT_NTS)
+
 classes: $(ALL_CLASS_NTS)
 
-all: core subjects classes
+occupations: $(ALL_OCC_NTS)
+
+all: core subjects occ_subjects classes occupations
 
 # -----------------------
 # Directories
@@ -135,10 +154,18 @@ $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 	gsplit -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
-$(CONCEPT_BACKBONE): $(SPLIT_DONE) | $(SUBJECTS_DIR)
+# Merge class and occupation names so partition_chunks routes occupation QIDs
+# into their own per-QID subjects files (rather than P31_other)
+$(OCC_NAMES_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
+	cat $(ALL_OCC_FILES) > $@
+
+$(ALL_NAMES_FILE): $(CLASS_NAMES_FILE) $(OCC_NAMES_FILE)
+	cat $^ > $@
+
+$(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $(JOBS) --bar --halt now,fail=1 \
-	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(CLASS_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
+	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(ALL_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
 # -----------------------
 # 3. Prepare subject vocabularies
@@ -204,6 +231,16 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
+# -----------------------
+# 7b. Generate SKOS for individual occupation slugs
+# eg. make skos_occ_subjects SUBJECTS="electricalengineer_1376 civilengineer_2907"
+# -----------------------
+
+OCC_SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
+  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
+
+skos_occ_subjects: $(OCC_SUBJECT_OUTS)
+
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
            $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
@@ -268,6 +305,53 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
+
+# -----------------------
+# 9. Per-occupation-slug NTs
+# Each row of an occupations/ TSV is (QID, slug). The QID-named NT is built by
+# the SKOS % rules above; the slug-named NT simply copies it.
+# eg. wikicore-DATE-electricalengineer_1376-LOCALE.nt <- wikicore-DATE-Q1326886-LOCALE.nt
+# -----------------------
+
+define OCC_SUBJ_RULE
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(2)-$(LOCALE).nt: \
+    $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt
+	cp $$< $$@
+	@echo "Generated $$@"
+endef
+$(foreach F,$(ALL_OCC_FILES),\
+  $(foreach PAIR,$(shell awk '{print $$1 "@@" $$2}' $(F)),\
+    $(eval $(call OCC_SUBJ_RULE,\
+      $(word 1,$(subst @@, ,$(PAIR))),\
+      $(word 2,$(subst @@, ,$(PAIR)))))))
+
+# -----------------------
+# 10. Generate SKOS vocab from an occupations/ TSV
+# eg. make skos_occupation OCC_FILE=occupations/engineering.tsv
+# -----------------------
+
+OCC_FILE   ?=
+OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
+OCC_SLUGS   = $(if $(OCC_FILE),$(shell awk '{print $$2}' $(OCC_FILE)),)
+OCC_PARTS   = $(foreach S,$(OCC_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
+OCC_NT      = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).nt
+
+skos_occupation:
+ifndef OCC_FILE
+	$(error OCC_FILE is not set. Usage: make skos_occupation OCC_FILE=occupations/engineering.tsv)
+endif
+	$(MAKE) $(OCC_NT)
+
+# Per-occupation combined NTs — one rule per occupations/*.tsv (used by skos_occupation and make occupations)
+# Depends on slug-named individual NTs (col 2), not QIDs (col 1)
+define OCC_RULE
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
+    $$(foreach S,$$(shell awk '{print $$$$2}' $(ROOT_DIR)/occupations/$(1).tsv),\
+      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(S)-$(LOCALE).nt)
+	cat $$^ > $$@
+	@echo "Generated $$@"
+endef
+$(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 
 # -----------------------
 # Convert .nt files to compressed Turtle
