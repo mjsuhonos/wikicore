@@ -58,14 +58,15 @@ SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_$(LOCALE)_qids.tsv
 # -----------------------
 # Working files
 # -----------------------
-JENA_DIR         := $(WORK_DIR)/jena
-SKOS_DIR         := $(WORK_DIR)/skos
-SPLIT_DIR        := $(WORK_DIR)/splits
-SUBJECTS_DIR     := $(WORK_DIR)/subjects
-SUBJECTS_SORTED  := $(SUBJECTS_DIR)/subjects_sorted.tsv
-SUBJECTS_DONE    := $(SUBJECTS_DIR)/.subjects_individually_sorted
-LABELS_SPLIT_DIR  := $(WORK_DIR)/label_splits
-LABELS_SPLIT_DONE := $(LABELS_SPLIT_DIR)/.labels_split_done
+JENA_DIR              := $(WORK_DIR)/jena
+SKOS_DIR              := $(WORK_DIR)/skos
+SPLIT_DIR             := $(WORK_DIR)/splits
+SUBJECTS_DIR          := $(WORK_DIR)/subjects
+SUBJECTS_SORTED       := $(SUBJECTS_DIR)/subjects_sorted.tsv
+SUBJECTS_DONE         := $(SUBJECTS_DIR)/.subjects_individually_sorted
+LABELS_SPLIT_DIR      := $(WORK_DIR)/label_splits
+LABELS_SPLIT_DONE     := $(LABELS_SPLIT_DIR)/.labels_split_done
+CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
 # -----------------------
 # Core files
@@ -206,7 +207,8 @@ skos_subjects: $(SUBJECT_OUTS)
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
            $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
-           $(SKOS_DIR)/skos_%_broader.nt
+           $(SKOS_DIR)/skos_%_broader.nt \
+           $(CONCEPT_BACKBONE_SORTED)
 
 $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
@@ -225,9 +227,11 @@ $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
 	  | LC_ALL=C sort -u > $@
 
-$(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	LC_ALL=C sort -u $(CONCEPT_BACKBONE) \
-	  | LC_ALL=C join $(SUBJECTS_DIR)/$*_subjects.tsv - \
+$(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
+	LC_ALL=C sort -u $< > $@
+
+$(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(CONCEPT_BACKBONE_SORTED) | $(SKOS_DIR)
+	LC_ALL=C join $(SUBJECTS_DIR)/$*_subjects.tsv $(CONCEPT_BACKBONE_SORTED) \
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
@@ -280,8 +284,10 @@ RIOT_PREFIXES := \
   --prefix wd=http://www.wikidata.org/entity/ \
   --prefix wikicore=https://wikicore.ca/
 
+PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
+
 %.ttl.gz: %.nt
-	riot --output=turtle $(RIOT_PREFIXES) $< | pigz -p $(JOBS) > $@
+	riot --output=turtle $(RIOT_PREFIXES) $< | pigz -p $(PIGZ_JOBS) > $@
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
