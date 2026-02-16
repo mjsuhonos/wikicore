@@ -141,7 +141,7 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FI
 	  | grep -F '<http://www.wikidata.org/entity/' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
-	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) \
+	  | LC_ALL=C join -o 2.1 - $(SITELINKS_FILE) \
 	  > $@
 
 # -----------------------
