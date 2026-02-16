@@ -3,7 +3,30 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all clean skos_subjects
+.PHONY: all core subjects classes skos_subjects skos_class help
+
+help:
+	@echo "Wiki Core processing pipeline"
+	@echo ""
+	@echo "Usage: make <target> [OPTIONS]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  core                          Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
+	@echo "  subjects                      Build one .nt per QID across all classes/ TSVs"
+	@echo "  classes                       Build one combined .nt per classes/ TSV"
+	@echo "  all                           Run core + subjects + classes"
+	@echo "  skos_subjects SUBJECTS='...'  Build SKOS for specific QIDs (eg. 'Q5 Q532')"
+	@echo "  skos_class CLASS_FILE=<path>  Build combined .nt for a single classes/ TSV"
+	@echo "  clean                         Remove all working files"
+	@echo ""
+	@echo "Options:"
+	@echo "  LOCALE=<lang>   Output language (default: en)"
+	@echo "  JOBS=<n>        Parallel jobs (default: nproc)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make core"
+	@echo "  make skos_subjects SUBJECTS='Q5 Q532'"
+	@echo "  make skos_class CLASS_FILE=classes/aircraft.tsv"
 
 # -----------------------
 # Options
@@ -70,7 +93,20 @@ SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 # -----------------------
 FINAL_NT := $(ROOT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
 
-all: $(FINAL_NT)
+# All class TSV files and their derived targets
+ALL_CLASS_FILES   := $(wildcard $(ROOT_DIR)/classes/*.tsv)
+ALL_CLASS_NAMES   := $(basename $(notdir $(ALL_CLASS_FILES)))
+ALL_CLASS_NTS     := $(foreach C,$(ALL_CLASS_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).nt)
+ALL_SUBJECT_QIDS  := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $$1}' $(F))))
+ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+
+core: $(FINAL_NT)
+
+subjects: $(ALL_SUBJECT_NTS)
+
+classes: $(ALL_CLASS_NTS)
+
+all: core subjects classes
 
 # -----------------------
 # Directories
@@ -200,6 +236,33 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
 	$(SKOS_DIR)/skos_%_broader.nt
 	cat $^ > $@
+
+# -----------------------
+# 8. Generate SKOS vocab from a classes/ TSV
+# eg. make skos_class CLASS_FILE=classes/aircraft.tsv
+# -----------------------
+
+CLASS_FILE  ?=
+CLASS_NAME   = $(basename $(notdir $(CLASS_FILE)))
+CLASS_QIDS   = $(if $(CLASS_FILE),$(shell awk '{print $$1}' $(CLASS_FILE)),)
+CLASS_PARTS  = $(foreach Q,$(CLASS_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+CLASS_NT     = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
+
+skos_class:
+ifndef CLASS_FILE
+	$(error CLASS_FILE is not set. Usage: make skos_class CLASS_FILE=classes/aircraft.tsv)
+endif
+	$(MAKE) $(CLASS_NT)
+
+# Per-class combined NTs — one rule per classes/*.tsv (used by skos_class and make classes)
+define CLASS_RULE
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
+    $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
+      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt)
+	cat $$^ > $$@
+	@echo "Generated $$@"
+endef
+$(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 # -----------------------
 # Clean
