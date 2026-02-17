@@ -129,6 +129,8 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 | Comic | 8,240 |
 | **Total (unique)** | **3,399,735** |
 
+![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
+
 ---
 
 ## Build Pipeline
