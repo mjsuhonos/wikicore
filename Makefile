@@ -245,8 +245,21 @@ $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $< > $@
 
 $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	@echo "<$(VOCAB_URI)> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ." > $@
-	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$(VOCAB_URI)" \
+	@id='$*'; \
+	if [ "$$id" = "core" ]; then \
+		vocab_uri="$(VOCAB_URI)/core"; \
+	elif echo "$$id" | grep -qE '^Q5_'; then \
+		category=$$(echo "$$id" | sed 's/^Q5_//'); \
+		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
+	elif echo "$$id" | grep -qE '^Q[0-9]+$$'; then \
+		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
+	elif [ "$$id" = "P31_other" ]; then \
+		vocab_uri="$(VOCAB_URI)/subjects/other"; \
+	else \
+		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
+	fi; \
+	echo "<$$vocab_uri> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ." > $@; \
+	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$$vocab_uri" \
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
