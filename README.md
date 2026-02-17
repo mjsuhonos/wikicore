@@ -55,79 +55,9 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 | Total Wikidata entities | 116,659,543 |
 | Has English sitelink | 10,150,254 |
 | In scope (has P31 / taxonomy) | 9,718,047 |
+| Named classes | 3,906,431 |
+| Humans (Q5) | 2,632,929 |
 | Core taxonomy concepts | 29,508 |
-
-### Humans (Q5) — by occupation group
-
-| Occupation | Subjects |
-|------------|--------:|
-| Sports | 690,257 |
-| Politics | 341,619 |
-| Film | 186,885 |
-| Literature | 176,881 |
-| Science | 169,254 |
-| Music | 146,976 |
-| Arts | 112,919 |
-| Education | 101,441 |
-| Media | 84,567 |
-| Business | 80,843 |
-| Law | 78,448 |
-| Military | 73,900 |
-| Religion | 62,283 |
-| Engineering | 46,684 |
-| Medicine | 42,700 |
-| Activism | 32,355 |
-| Misc | 30,558 |
-| Genealogy | 5,868 |
-| Other | 1,050 |
-| **Total (unique)** | **2,106,826** |
-
-### Named classes — by domain group
-
-| Domain | Subjects |
-|--------|--------:|
-| Science | 577,240 |
-| Music | 347,174 |
-| Sports | 299,797 |
-| Village | 212,189 |
-| Film | 181,801 |
-| Community | 181,114 |
-| Organization | 162,632 |
-| Building | 161,123 |
-| Railway | 115,307 |
-| Television | 109,340 |
-| Literary | 96,214 |
-| Name | 93,497 |
-| Water | 92,173 |
-| Military | 82,858 |
-| School | 80,530 |
-| Media | 80,156 |
-| Political | 67,822 |
-| City | 67,479 |
-| District | 66,039 |
-| Municipality | 60,326 |
-| Soccer | 59,464 |
-| Commune | 57,774 |
-| Transport | 46,900 |
-| Astronomy | 46,848 |
-| Town | 45,941 |
-| Recurring | 44,985 |
-| Religion | 44,375 |
-| Cultural | 43,412 |
-| Mountain | 41,005 |
-| Geography | 40,755 |
-| Video | 39,959 |
-| Historic | 36,402 |
-| Aircraft | 35,288 |
-| Other | 32,476 |
-| Olympic | 31,144 |
-| Election | 29,881 |
-| Technology | 25,473 |
-| Character | 23,387 |
-| Group | 19,117 |
-| Language | 18,794 |
-| Comic | 8,240 |
-| **Total (unique)** | **3,399,735** |
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
