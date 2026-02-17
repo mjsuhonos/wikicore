@@ -54,10 +54,10 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 |-------|------:|
 | Total Wikidata entities | 116,659,543 |
 | Has English sitelink | 10,150,254 |
-| In scope (has P31 / taxonomy) | 9,718,047 |
+| In scope (has P31 / concepts) | 9,718,047 |
 | Named classes | 3,906,431 |
 | Humans (Q5) | 2,632,929 |
-| Core taxonomy concepts | 29,508 |
+| Core concepts | 29,508 |
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
