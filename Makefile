@@ -159,21 +159,26 @@ $(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_
 	mkdir -p $@
 
 # -----------------------
-# 1. Extract core properties, P106, and Q5 subjects in a single decompression pass
+# 1. Extract core properties and P106 in a single decompression pass
 # -----------------------
-$(CORE_PROPS_NT) $(P106_NT) $(Q5_SUBJECTS_FILE) &: $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
+$(CORE_PROPS_NT) $(P106_NT) &: $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
 	pigz -dc $(PROP_DIRECT_GZ) \
 	  | tee \
 	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
 	        | rg -F -v '_:' > $(CORE_PROPS_NT)) \
 	    >(rg -F '/prop/direct/P106>' \
 	        | rg -F -v '_:' > $(P106_NT)) \
-	    >(rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' \
-	        | awk '{print $$1}' \
-	        | LC_ALL=C sort -u \
-	        | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
-	        | LC_ALL=C sort -u > $(Q5_SUBJECTS_FILE)) \
-	    > /dev/null
+	    > /dev/null; wait
+
+# Extract Q5 (human) subjects with sitelinks from core props (separate rule to
+# avoid race condition with parallel builds: process substitution in step 1 may
+# not flush Q5_SUBJECTS_FILE before make considers the &: recipe done)
+$(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+	rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' $(CORE_PROPS_NT) \
+	  | awk '{print $$1}' \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
+	  | LC_ALL=C sort -u > $@
 
 # -----------------------
 # 2. Split + partition core properties
