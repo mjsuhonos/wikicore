@@ -140,7 +140,11 @@ core: $(FINAL_NT)
 subjects: $(ALL_SUBJECT_NTS)
 
 occ_subjects: $(Q5_OCC_GROUPED)
-	$(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
+	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
+	else \
+	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
+	fi
 
 classes: $(ALL_CLASS_NTS)
 
