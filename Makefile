@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all core subjects classes occupations skos_subjects skos_class skos_occupation skos_by_occupation turtle clean distclean help
+.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_class skos_occupation skos_by_occupation turtle clean distclean help
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -12,10 +12,11 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  core                                Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  subjects                            Build one .nt per QID across all classes/ TSVs"
-	@echo "  classes                             Build one combined .nt per classes/ TSV"
-	@echo "  occupations                         Build one combined .nt per occupations/ TSV (SKOS about Q5 humans)"
-	@echo "  all                                 Run core + subjects + classes + occupations"
+	@echo "  subjects                            Build one .nt per QID across all classes/ TSVs (732 files)"
+	@echo "  occ_subjects                        Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
+	@echo "  classes                             Build one combined .nt per classes/ TSV (42 files)"
+	@echo "  occupations                         Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
+	@echo "  all                                 Run core + subjects + occ_subjects + classes + occupations"
 	@echo "  skos_subjects SUBJECTS='...'        Build SKOS for specific QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
 	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV (output prefixed occ-)"
@@ -30,9 +31,11 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make core"
+	@echo "  make subjects       # 732 class QID files"
+	@echo "  make occ_subjects   # 1,451 occupation QID files"
 	@echo "  make skos_subjects SUBJECTS='Q5 Q532'"
 	@echo "  make skos_class CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make occupations    # Generates SKOS about humans with each occupation"
+	@echo "  make occupations    # 19 occupation group files"
 	@echo "  make skos_occupation OCC_FILE=occupations/engineering.tsv"
 	@echo "  make skos_by_occupation OBJECT=Q7888586    # Chemical engineers"
 
@@ -91,6 +94,7 @@ CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 P106_NT             := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 Q5_SUBJECTS_FILE    := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED      := $(SUBJECTS_DIR)/.q5_occupation_grouped
+OCC_QIDS_FILE       := $(WORK_DIR)/occ_qids.txt
 
 # -----------------------
 # RDF / SKOS URIs
@@ -123,15 +127,21 @@ ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
 ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
 ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
 
+# Individual occupation QID files (one per occupation QID)
+ALL_OCC_QIDS           := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
+ALL_OCC_QID_NTS        := $(foreach Q,$(ALL_OCC_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+
 core: $(FINAL_NT)
 
 subjects: $(ALL_SUBJECT_NTS)
+
+occ_subjects: $(ALL_OCC_QID_NTS)
 
 classes: $(ALL_CLASS_NTS)
 
 occupations: $(ALL_OCC_NTS)
 
-all: core subjects classes occupations
+all: core subjects occ_subjects classes occupations
 
 # -----------------------
 # Directories
@@ -161,6 +171,10 @@ $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 # into their own per-QID subjects files (rather than P31_other)
 $(OCC_NAMES_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
 	cat $(ALL_OCC_FILES) > $@
+
+# Create list of occupation QIDs for concept_scheme rule
+$(OCC_QIDS_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
+	cat $(ALL_OCC_FILES) | awk '{print $$1}' | sort -u > $@
 
 $(ALL_NAMES_FILE): $(CLASS_NAMES_FILE) $(OCC_NAMES_FILE)
 	cat $^ > $@
@@ -217,6 +231,20 @@ $(Q5_OCC_GROUPED): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_
 	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
 	@touch $@
 
+# Generate individual occupation QID subject files (Q7888586_subjects.tsv)
+# Pattern rule: for each occupation QID, extract Q5 subjects with P106=that QID
+define OCC_QID_SUBJECTS_RULE
+$(SUBJECTS_DIR)/$(1)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
+	@echo "Extracting Q5 subjects with P106=$(1)"
+	@grep -F '<http://www.wikidata.org/entity/$(1)>' $(P106_NT) \
+	  | awk '{print $$$$1}' \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
+	  > $$@
+	@echo "Found $$$$(wc -l < $$@) Q5 subjects with P106=$(1)"
+endef
+$(foreach Q,$(ALL_OCC_QIDS),$(eval $(call OCC_QID_SUBJECTS_RULE,$(Q))))
+
 # -----------------------
 # 4. Load backbone into Jena
 # -----------------------
@@ -269,7 +297,7 @@ $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
 	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $< > $@
 
-$(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
+$(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_FILE) | $(SKOS_DIR)
 	@id='$*'; \
 	if [ "$$id" = "core" ]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
@@ -279,6 +307,8 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DI
 	elif echo "$$id" | grep -qE '^P106-Q'; then \
 		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
+	elif echo "$$id" | grep -qE '^Q[0-9]+$$' && grep -qF "$$id" $(OCC_QIDS_FILE); then \
+		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
 	elif echo "$$id" | grep -qE '^Q[0-9]+$$'; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
 	elif [ "$$id" = "P31_other" ]; then \

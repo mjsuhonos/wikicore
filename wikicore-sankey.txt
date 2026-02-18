@@ -2,6 +2,18 @@
 // Counts reflect unique subjects (QIDs) after sitelink filtering.
 // One subject may appear in multiple occupation/class groups.
 //
+// ── Output from 'make all' ────────────────────────────────────────────────
+// Total files generated: 794
+//   - 1 core vocabulary file (29,508 core concepts)
+//   - 732 individual subject files (one per class QID)
+//   - 42 class group files (3,906,431 memberships with overlap)
+//   - 19 occupation group files (2,632,939 Q5 memberships with overlap)
+//
+// IMPORTANT: Occupation SKOS files contain statements about Q5 (human) entities,
+// not about occupation concepts. E.g., wikicore-DATE-occ-engineering-en.nt
+// contains SKOS about individual engineers (Ada Lovelace, etc.), not about
+// the occupation concept "engineer" (Q81096).
+//
 // Source [AMOUNT] Target
 
 // ── Level 0: sitelink filtering ───────────────────────────────────────────
@@ -25,6 +37,8 @@ P31 Longtail Classes [725879] Uncategorized P31
 
 // ── Level 3a: Q5 Humans → occupation groups ───────────────────────────────
 // (unique subjects per group file; one person may appear in multiple groups)
+// Output: 19 occupation SKOS files (wikicore-DATE-occ-{name}-en.nt)
+// Each contains SKOS about Q5 humans with those occupations
 Q5 Humans [690257] Sports
 Q5 Humans [341619] Politics
 Q5 Humans [186885] Film
@@ -49,6 +63,9 @@ Q5 Humans [167451] Unmatched
 // ── Level 3b: Named Classes → class groups ────────────────────────────────
 // (sum of unique subjects across Q*_subjects.tsv files for each group;
 //  one item may appear in multiple groups; wikimedia has 0 — filtered by sitelinks)
+// Output: 42 class SKOS files (wikicore-DATE-{classname}-en.nt)
+// Plus: 732 individual QID SKOS files (wikicore-DATE-Q123456-en.nt)
+// Each contains SKOS about the class concepts and their instances
 Named Classes [577240] science
 Named Classes [347174] music
 Named Classes [299797] sports
