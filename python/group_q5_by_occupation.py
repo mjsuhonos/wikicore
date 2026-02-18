@@ -123,6 +123,15 @@ for occ_qid, occ_subjs in qid_subjects.items():
 
 print(f"Wrote {qid_count} per-QID subject files")
 
+# Write manifest of active occupation QIDs (only those with ≥1 subject),
+# so the Makefile can filter build targets rather than attempting to process
+# QIDs that have no Q5 humans in the data.
+active_qids_path = os.path.join(os.path.dirname(OUTPUT_DIR), "active_occ_qids.txt")
+with open(active_qids_path, "w") as f:
+    for occ_qid in sorted(qid_subjects.keys()):
+        f.write(occ_qid + "\n")
+print(f"Wrote active QID manifest: {active_qids_path}")
+
 print("\nResults:")
 for group in groups:
     print(f"  {group}: {group_counts[group]:,}")
