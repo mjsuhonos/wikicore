@@ -3,6 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 .PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_class skos_occupation skos_by_occupation turtle clean distclean help
 
 help:
@@ -164,7 +165,7 @@ $(CORE_PROPS_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
-	gsplit -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
+	split -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
 # Merge class and occupation names so partition_chunks routes occupation QIDs
@@ -272,7 +273,7 @@ $(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) > $@
 
 $(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
-	gsplit -n l/$(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
+	split -n l/$(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
 	@touch $@
 
 # -----------------------
