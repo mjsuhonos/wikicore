@@ -4,7 +4,8 @@ Group Q5 (human) subjects by occupation groups defined in occupations/*.tsv,
 using P106 triples from working.nosync/wikidata-P106-sitelinks.nt.
 
 Output: working.nosync/subjects/Q5_{group}_subjects.tsv for each occupation group,
-        plus Q5_other_subjects.tsv for subjects with no matching occupation.
+        plus Q5_unmatched_subjects.tsv for subjects with no matching occupation,
+        and {QID}_subjects.tsv for each individual occupation QID (sorted, for join).
 """
 
 import os
@@ -57,10 +58,11 @@ def uri_to_qid(uri):
 def qid_to_uri(qid):
     return f"<http://www.wikidata.org/entity/{qid}>"
 
-# 3. Parse NT file and assign subjects to groups
+# 3. Parse NT file and assign subjects to groups and individual QIDs
 # Each line: <subject> <P106> <occupation> .
-# A subject can have multiple occupations -> assign to all matching groups
+# A subject can have multiple occupations -> assign to all matching groups/QIDs
 subject_groups = defaultdict(set)
+qid_subjects = defaultdict(set)  # occupation QID -> set of subject URIs
 
 p106_uri = "<http://www.wikidata.org/prop/direct/P106>"
 
@@ -82,6 +84,7 @@ with open(NT_FILE) as f:
         occ_qid = uri_to_qid(occ_uri)
         if occ_qid and occ_qid in occ_to_group:
             subject_groups[subj_uri].add(occ_to_group[occ_qid])
+            qid_subjects[occ_qid].add(subj_uri)
 
 print(f"Found occupation matches for {len(subject_groups)} subjects")
 
@@ -90,28 +93,35 @@ print(f"Found occupation matches for {len(subject_groups)} subjects")
 group_counts = defaultdict(int)
 other_count = 0
 
-# Open all output files
-out_files = {}
+# Write group files (sorted for downstream join compatibility)
 for group in groups:
     path = os.path.join(OUTPUT_DIR, f"Q5_{group}_subjects.tsv")
-    out_files[group] = open(path, "w")
+    group_subjs = sorted(
+        subj_uri for subj_uri in subjects
+        if group in subject_groups.get(subj_uri, set())
+    )
+    with open(path, "w") as f:
+        for subj_uri in group_subjs:
+            f.write(subj_uri + "\n")
+    group_counts[group] = len(group_subjs)
 
+# Write unmatched subjects file (sorted)
 other_path = os.path.join(OUTPUT_DIR, "Q5_unmatched_subjects.tsv")
-other_file = open(other_path, "w")
-
-for subj_uri in subjects:
-    grps = subject_groups.get(subj_uri)
-    if grps:
-        for g in grps:
-            out_files[g].write(subj_uri + "\n")
-            group_counts[g] += 1
-    else:
-        other_file.write(subj_uri + "\n")
+with open(other_path, "w") as f:
+    for subj_uri in sorted(subj_uri for subj_uri in subjects if not subject_groups.get(subj_uri)):
+        f.write(subj_uri + "\n")
         other_count += 1
 
-for f in out_files.values():
-    f.close()
-other_file.close()
+# Write per-QID subject files (sorted, replaces per-QID grep in Makefile)
+qid_count = 0
+for occ_qid, occ_subjs in qid_subjects.items():
+    path = os.path.join(OUTPUT_DIR, f"{occ_qid}_subjects.tsv")
+    with open(path, "w") as f:
+        for subj_uri in sorted(occ_subjs):
+            f.write(subj_uri + "\n")
+    qid_count += 1
+
+print(f"Wrote {qid_count} per-QID subject files")
 
 print("\nResults:")
 for group in groups:

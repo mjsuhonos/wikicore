@@ -151,13 +151,21 @@ $(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_
 	mkdir -p $@
 
 # -----------------------
-# 1. Extract core properties
+# 1. Extract core properties, P106, and Q5 subjects in a single decompression pass
 # -----------------------
-$(CORE_PROPS_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
+$(CORE_PROPS_NT) $(P106_NT) $(Q5_SUBJECTS_FILE) &: $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
 	pigz -dc $(PROP_DIRECT_GZ) \
-	  | rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
-	  | rg -F -v '_:' \
-	  > $@
+	  | tee \
+	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
+	        | rg -F -v '_:' > $(CORE_PROPS_NT)) \
+	    >(rg -F '/prop/direct/P106>' \
+	        | rg -F -v '_:' > $(P106_NT)) \
+	    >(rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' \
+	        | awk '{print $$1}' \
+	        | LC_ALL=C sort -u \
+	        | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
+	        | LC_ALL=C sort -u > $(Q5_SUBJECTS_FILE)) \
+	    > /dev/null
 
 # -----------------------
 # 2. Split + partition core properties
@@ -175,7 +183,7 @@ $(OCC_NAMES_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
 
 # Create list of occupation QIDs for concept_scheme rule
 $(OCC_QIDS_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
-	cat $(ALL_OCC_FILES) | awk '{print $$1}' | sort -u > $@
+	cat $(ALL_OCC_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 $(ALL_NAMES_FILE): $(CLASS_NAMES_FILE) $(OCC_NAMES_FILE)
 	cat $^ > $@
@@ -192,7 +200,7 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 # Sort, deduplicate, and pre-filter each per-subject TSV against sitelinks
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(SITELINKS_FILE)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - > "$$tmp" && mv "$$tmp" {1}' \
+	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - | LC_ALL=C sort -u > "$$tmp" && mv "$$tmp" {1}' \
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
@@ -208,43 +216,17 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	 > $@
 
 # -----------------------
-# 3b. Extract P106 (occupation) and group Q5 humans by occupation
+# 3b. Group Q5 humans by occupation (P106_NT and Q5_SUBJECTS_FILE from combined step 1)
 # -----------------------
 
-# Extract all P106 triples from property-direct dump
-$(P106_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
-	pigz -dc $(PROP_DIRECT_GZ) \
-	  | rg -F '/prop/direct/P106>' \
-	  | rg -F -v '_:' \
-	  > $@
-
-# Extract Q5 (human) subjects - filter for instance of Q5
-$(Q5_SUBJECTS_FILE): $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
-	pigz -dc $(PROP_DIRECT_GZ) \
-	  | rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' \
-	  | awk '{print $$1}' \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
-	  > $@
-
-# Group Q5 subjects by occupation into Q5_{occupation}_subjects.tsv files
+# Group Q5 subjects by occupation group and by individual QID in a single P106_NT pass
 $(Q5_OCC_GROUPED): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
 	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
 	@touch $@
 
-# Generate individual occupation QID subject files (Q7888586_subjects.tsv)
-# Pattern rule: for each occupation QID, extract Q5 subjects with P106=that QID
-define OCC_QID_SUBJECTS_RULE
-$(SUBJECTS_DIR)/$(1)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
-	@echo "Extracting Q5 subjects with P106=$(1)"
-	@grep -F '<http://www.wikidata.org/entity/$(1)>' $(P106_NT) \
-	  | awk '{print $$$$1}' \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
-	  > $$@
-	@echo "Found $$$$(wc -l < $$@) Q5 subjects with P106=$(1)"
-endef
-$(foreach Q,$(ALL_OCC_QIDS),$(eval $(call OCC_QID_SUBJECTS_RULE,$(Q))))
+# Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED
+# (replaces the former OCC_QID_SUBJECTS_RULE which did 1 grep pass per QID over P106_NT)
+$(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED) ;
 
 # -----------------------
 # 4. Load backbone into Jena
