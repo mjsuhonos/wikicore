@@ -96,6 +96,7 @@ P106_NT             := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 Q5_SUBJECTS_FILE    := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED      := $(SUBJECTS_DIR)/.q5_occupation_grouped
 OCC_QIDS_FILE       := $(WORK_DIR)/occ_qids.txt
+ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
 # -----------------------
 # RDF / SKOS URIs
@@ -128,15 +129,18 @@ ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
 ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
 ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
 
-# Individual occupation QID files (one per occupation QID)
+# Individual occupation QID files (one per occupation QID).
+# ALL_OCC_QIDS is the full list from TSV files; used for the "claim" rule and OCC_QIDS_FILE.
+# occ_subjects uses a sub-make driven by active_occ_qids.txt (written by group_q5_by_occupation.py)
+# so that QIDs with zero Q5 subjects are never targeted.
 ALL_OCC_QIDS           := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
-ALL_OCC_QID_NTS        := $(foreach Q,$(ALL_OCC_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
 core: $(FINAL_NT)
 
 subjects: $(ALL_SUBJECT_NTS)
 
-occ_subjects: $(ALL_OCC_QID_NTS)
+occ_subjects: $(Q5_OCC_GROUPED)
+	$(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
 classes: $(ALL_CLASS_NTS)
 
