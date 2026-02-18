@@ -3,7 +3,7 @@
 # -----------------------
 
 SHELL := /bin/bash
-.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_occ_subjects skos_class skos_occupation turtle clean distclean help
+.PHONY: all core subjects classes occupations skos_subjects skos_class skos_occupation skos_by_occupation turtle clean distclean help
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -13,14 +13,13 @@ help:
 	@echo "Targets:"
 	@echo "  core                                Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
 	@echo "  subjects                            Build one .nt per QID across all classes/ TSVs"
-	@echo "  occ_subjects                        Build one .nt per slug across all occupations/ TSVs"
 	@echo "  classes                             Build one combined .nt per classes/ TSV"
-	@echo "  occupations                         Build one combined .nt per occupations/ TSV"
-	@echo "  all                                 Run core + subjects + occ_subjects + classes + occupations"
+	@echo "  occupations                         Build one combined .nt per occupations/ TSV (SKOS about Q5 humans)"
+	@echo "  all                                 Run core + subjects + classes + occupations"
 	@echo "  skos_subjects SUBJECTS='...'        Build SKOS for specific QIDs (eg. 'Q5 Q532')"
-	@echo "  skos_occ_subjects SUBJECTS='...'    Build SKOS for specific occupation slugs (eg. 'electricalengineer_1376')"
 	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
 	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV (output prefixed occ-)"
+	@echo "  skos_by_occupation OBJECT=<QID>     Build SKOS for Q5 humans with a specific occupation QID"
 	@echo "  turtle                              Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo "  clean                               Remove working files"
 	@echo "  distclean                           Remove working files and all generated .nt/.ttl.gz"
@@ -33,8 +32,9 @@ help:
 	@echo "  make core"
 	@echo "  make skos_subjects SUBJECTS='Q5 Q532'"
 	@echo "  make skos_class CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make skos_occ_subjects SUBJECTS='electricalengineer_1376 civilengineer_2907'"
+	@echo "  make occupations    # Generates SKOS about humans with each occupation"
 	@echo "  make skos_occupation OCC_FILE=occupations/engineering.tsv"
+	@echo "  make skos_by_occupation OBJECT=Q7888586    # Chemical engineers"
 
 # -----------------------
 # Options
@@ -86,6 +86,13 @@ SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
 CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 
 # -----------------------
+# P106 (occupation) files
+# -----------------------
+P106_NT             := $(WORK_DIR)/wikidata-P106-sitelinks.nt
+Q5_SUBJECTS_FILE    := $(SUBJECTS_DIR)/Q5_subjects.tsv
+Q5_OCC_GROUPED      := $(SUBJECTS_DIR)/.q5_occupation_grouped
+
+# -----------------------
 # RDF / SKOS URIs
 # -----------------------
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
@@ -111,23 +118,20 @@ ALL_SUBJECT_QIDS  := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $
 ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
 # All occupation TSV files and their derived targets
+# Occupations now generate SKOS about Q5 (humans) who have those occupations
 ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
 ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
 ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
-ALL_OCC_SUBJECT_SLUGS  := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$2}' $(F))))
-ALL_OCC_SUBJECT_NTS    := $(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
 
 core: $(FINAL_NT)
 
 subjects: $(ALL_SUBJECT_NTS)
 
-occ_subjects: $(ALL_OCC_SUBJECT_NTS)
-
 classes: $(ALL_CLASS_NTS)
 
 occupations: $(ALL_OCC_NTS)
 
-all: core subjects occ_subjects classes occupations
+all: core subjects classes occupations
 
 # -----------------------
 # Directories
@@ -189,6 +193,31 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	 > $@
 
 # -----------------------
+# 3b. Extract P106 (occupation) and group Q5 humans by occupation
+# -----------------------
+
+# Extract all P106 triples from property-direct dump
+$(P106_NT): $(PROP_DIRECT_GZ) | $(WORK_DIR)
+	pigz -dc $(PROP_DIRECT_GZ) \
+	  | rg -F '/prop/direct/P106>' \
+	  | rg -F -v '_:' \
+	  > $@
+
+# Extract Q5 (human) subjects - filter for instance of Q5
+$(Q5_SUBJECTS_FILE): $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+	pigz -dc $(PROP_DIRECT_GZ) \
+	  | rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' \
+	  | awk '{print $$1}' \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
+	  > $@
+
+# Group Q5 subjects by occupation into Q5_{occupation}_subjects.tsv files
+$(Q5_OCC_GROUPED): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
+	@touch $@
+
+# -----------------------
 # 4. Load backbone into Jena
 # -----------------------
 $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
@@ -230,10 +259,6 @@ SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
 
 skos_subjects: $(SUBJECT_OUTS)
 
-# skos_occ_subjects is an alias — slug-named NTs use the same output path as
-# QID-named NTs, so skos_subjects handles both (SUBJECTS= accepts slugs or QIDs)
-skos_occ_subjects: skos_subjects
-
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
            $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
@@ -251,6 +276,9 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DI
 	elif echo "$$id" | grep -qE '^Q5_'; then \
 		category=$$(echo "$$id" | sed 's/^Q5_//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
+	elif echo "$$id" | grep -qE '^P106-Q'; then \
+		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
+		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
 	elif echo "$$id" | grep -qE '^Q[0-9]+$$'; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
 	elif [ "$$id" = "P31_other" ]; then \
@@ -311,25 +339,8 @@ endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 # -----------------------
-# 9. Per-occupation-slug NTs
-# Each row of an occupations/ TSV is (QID, slug). The QID-named NT is built by
-# the SKOS % rules above; the slug-named NT simply copies it.
-# eg. wikicore-DATE-electricalengineer_1376-LOCALE.nt <- wikicore-DATE-Q1326886-LOCALE.nt
-# -----------------------
-
-# One rule per unique slug; collects all QIDs that map to that slug across all
-# occupation TSVs (handles cases where multiple QIDs share the same slug).
-define OCC_SUBJ_RULE
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
-    $$(foreach Q,$$(shell awk '$$$$2 == "$(1)" {print $$$$1}' $(ALL_OCC_FILES)),\
-      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt)
-	cat $$^ > $$@
-	@echo "Generated $$@"
-endef
-$(foreach S,$(ALL_OCC_SUBJECT_SLUGS),$(eval $(call OCC_SUBJ_RULE,$(S))))
-
-# -----------------------
-# 10. Generate SKOS vocab from an occupations/ TSV
+# 9. Generate SKOS vocabs from occupations/ TSVs
+# Each occupation generates SKOS about Q5 (human) entities that have that occupation
 # eg. make skos_occupation OCC_FILE=occupations/engineering.tsv
 # -----------------------
 
@@ -343,17 +354,63 @@ ifndef OCC_FILE
 endif
 	$(MAKE) $(OCC_NT)
 
-# Per-occupation combined NTs — one rule per occupations/*.tsv (used by skos_occupation and make occupations)
-# Depends on slug-named individual NTs (col 2), not QIDs (col 1)
+# Per-occupation combined NTs — one rule per occupations/*.tsv
+# Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
 # Prefixed with "occ-" to avoid collision with same-named classes/ targets
 define OCC_RULE
 $(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(1)-$(LOCALE).nt: \
-    $$(foreach S,$$(shell awk '{print $$$$2}' $(ROOT_DIR)/occupations/$(1).tsv),\
-      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(S)-$(LOCALE).nt)
-	cat $$^ > $$@
+    $(Q5_OCC_GROUPED) \
+    $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
+    $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
+    $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
+    $(SKOS_DIR)/skos_Q5_$(1)_broader.nt
+	cat $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
+	    $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
+	    $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
+	    $(SKOS_DIR)/skos_Q5_$(1)_broader.nt \
+	    > $$@
 	@echo "Generated $$@"
 endef
 $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
+
+# -----------------------
+# 10. Generate SKOS for Q5 humans by occupation QID
+# eg. make skos_by_occupation OBJECT=Q7888586
+# -----------------------
+
+OBJECT ?=
+OBJECT_NT = $(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-$(OBJECT)-$(LOCALE).nt
+
+skos_by_occupation:
+ifndef OBJECT
+	$(error OBJECT is not set. Usage: make skos_by_occupation OBJECT=Q7888586)
+endif
+	@echo "Generating SKOS for Q5 humans with P106=$(OBJECT)"
+	$(MAKE) $(OBJECT_NT)
+
+# Extract Q5 subjects that have P106 = OBJECT
+$(SUBJECTS_DIR)/P106-$(OBJECT)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
+	@echo "Extracting Q5 subjects with P106=$(OBJECT)"
+	@grep -F '<http://www.wikidata.org/entity/$(OBJECT)>' $(P106_NT) \
+	  | awk '{print $$1}' \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
+	  > $@
+	@echo "Found $$(wc -l < $@) Q5 subjects with P106=$(OBJECT)"
+
+# Generate SKOS from P106-{OBJECT}_subjects.tsv using standard pattern rules
+$(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
+    $(SUBJECTS_DIR)/P106-%_subjects.tsv \
+    $(SKOS_DIR)/skos_P106-%_concepts.nt \
+    $(SKOS_DIR)/skos_P106-%_concept_scheme.nt \
+    $(SKOS_DIR)/skos_P106-%_labels_$(LOCALE).nt \
+    $(SKOS_DIR)/skos_P106-%_broader.nt
+	cat $(SKOS_DIR)/skos_P106-$*_concepts.nt \
+	    $(SKOS_DIR)/skos_P106-$*_concept_scheme.nt \
+	    $(SKOS_DIR)/skos_P106-$*_labels_$(LOCALE).nt \
+	    $(SKOS_DIR)/skos_P106-$*_broader.nt \
+	    > $@
+	@echo "Generated $@"
 
 # -----------------------
 # Convert .nt files to compressed Turtle
