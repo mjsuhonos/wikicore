@@ -60,6 +60,13 @@ CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 OCC_NAMES_FILE   := $(WORK_DIR)/occ_names.tsv
 ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
 
+# Output directories (dated release layout)
+OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)
+CLASSES_OUT_DIR  := $(OUT_DIR)/classes
+CLASS_GROUPS_DIR := $(OUT_DIR)/classes/groups
+OCC_OUT_DIR      := $(OUT_DIR)/occupations
+OCC_GROUPS_DIR   := $(OUT_DIR)/occupations/groups
+
 # -----------------------
 # Inputs
 # -----------------------
@@ -114,20 +121,20 @@ SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 # -----------------------
 # Default target
 # -----------------------
-FINAL_NT := $(ROOT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
+FINAL_NT := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
 
 # All class TSV files and their derived targets
 ALL_CLASS_FILES   := $(wildcard $(ROOT_DIR)/classes/*.tsv)
 ALL_CLASS_NAMES   := $(basename $(notdir $(ALL_CLASS_FILES)))
-ALL_CLASS_NTS     := $(foreach C,$(ALL_CLASS_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).nt)
+ALL_CLASS_NTS     := $(foreach C,$(ALL_CLASS_NAMES),$(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).nt)
 ALL_SUBJECT_QIDS  := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $$1}' $(F))))
-ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
 # All occupation TSV files and their derived targets
 # Occupations now generate SKOS about Q5 (humans) who have those occupations
 ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
 ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
-ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
+ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
 
 # Individual occupation QID files (one per occupation QID).
 # ALL_OCC_QIDS is the full list from TSV files; used for the "claim" rule and OCC_QIDS_FILE.
@@ -141,7 +148,7 @@ subjects: $(ALL_SUBJECT_NTS)
 
 occ_subjects: $(Q5_OCC_GROUPED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
-	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
+	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
@@ -155,7 +162,8 @@ all: core subjects occ_subjects classes occupations
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR):
+$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
+$(OUT_DIR) $(CLASSES_OUT_DIR) $(CLASS_GROUPS_DIR) $(OCC_OUT_DIR) $(OCC_GROUPS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -279,7 +287,7 @@ $(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
 SUBJECTS ?= core
 
 SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
-  $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
+  $(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
 
 skos_subjects: $(SUBJECT_OUTS)
 
@@ -332,11 +340,25 @@ $(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(CONCEPT_BACKBONE
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
+$(OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_concepts.nt \
 	$(SKOS_DIR)/skos_%_concept_scheme.nt \
 	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_%_broader.nt
+	$(SKOS_DIR)/skos_%_broader.nt | $(OUT_DIR)
+	cat $^ > $@
+
+$(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
+	$(SKOS_DIR)/skos_%_concepts.nt \
+	$(SKOS_DIR)/skos_%_concept_scheme.nt \
+	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_%_broader.nt | $(CLASSES_OUT_DIR)
+	cat $^ > $@
+
+$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
+	$(SKOS_DIR)/skos_%_concepts.nt \
+	$(SKOS_DIR)/skos_%_concept_scheme.nt \
+	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_%_broader.nt | $(OCC_OUT_DIR)
 	cat $^ > $@
 
 # -----------------------
@@ -346,7 +368,7 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 
 CLASS_FILE  ?=
 CLASS_NAME   = $(basename $(notdir $(CLASS_FILE)))
-CLASS_NT     = $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
+CLASS_NT     = $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
 
 skos_class:
 ifndef CLASS_FILE
@@ -356,9 +378,9 @@ endif
 
 # Per-class combined NTs — one rule per classes/*.tsv (used by skos_class and make classes)
 define CLASS_RULE
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
+$(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
-      $(ROOT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt)
+      $(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
 	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
@@ -372,7 +394,7 @@ $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 OCC_FILE   ?=
 OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
-OCC_NT      = $(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(OCC_NAME)-$(LOCALE).nt
+OCC_NT      = $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(OCC_NAME)-$(LOCALE).nt
 
 skos_occupation:
 ifndef OCC_FILE
@@ -384,12 +406,12 @@ endif
 # Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
 # Prefixed with "occ-" to avoid collision with same-named classes/ targets
 define OCC_RULE
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-occ-$(1)-$(LOCALE).nt: \
+$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(1)-$(LOCALE).nt: \
     $(Q5_OCC_GROUPED) \
     $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
-    $(SKOS_DIR)/skos_Q5_$(1)_broader.nt
+    $(SKOS_DIR)/skos_Q5_$(1)_broader.nt | $(OCC_GROUPS_DIR)
 	cat $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
 	    $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
 	    $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
@@ -405,7 +427,7 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 # -----------------------
 
 OBJECT ?=
-OBJECT_NT = $(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-$(OBJECT)-$(LOCALE).nt
+OBJECT_NT = $(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-P106-$(OBJECT)-$(LOCALE).nt
 
 skos_by_occupation:
 ifndef OBJECT
@@ -425,12 +447,12 @@ $(SUBJECTS_DIR)/P106-$(OBJECT)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(
 	@echo "Found $$(wc -l < $@) Q5 subjects with P106=$(OBJECT)"
 
 # Generate SKOS from P106-{OBJECT}_subjects.tsv using standard pattern rules
-$(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
+$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
     $(SUBJECTS_DIR)/P106-%_subjects.tsv \
     $(SKOS_DIR)/skos_P106-%_concepts.nt \
     $(SKOS_DIR)/skos_P106-%_concept_scheme.nt \
     $(SKOS_DIR)/skos_P106-%_labels_$(LOCALE).nt \
-    $(SKOS_DIR)/skos_P106-%_broader.nt
+    $(SKOS_DIR)/skos_P106-%_broader.nt | $(OCC_OUT_DIR)
 	cat $(SKOS_DIR)/skos_P106-$*_concepts.nt \
 	    $(SKOS_DIR)/skos_P106-$*_concept_scheme.nt \
 	    $(SKOS_DIR)/skos_P106-$*_labels_$(LOCALE).nt \
@@ -441,7 +463,11 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
 # -----------------------
 # Convert .nt files to compressed Turtle
 # -----------------------
-EXISTING_NTS := $(wildcard $(ROOT_DIR)/wikicore-*.nt)
+EXISTING_NTS := $(wildcard $(OUT_DIR)/wikicore-*.nt) \
+               $(wildcard $(CLASSES_OUT_DIR)/wikicore-*.nt) \
+               $(wildcard $(CLASS_GROUPS_DIR)/wikicore-*.nt) \
+               $(wildcard $(OCC_OUT_DIR)/wikicore-*.nt) \
+               $(wildcard $(OCC_GROUPS_DIR)/wikicore-*.nt)
 TURTLE_GZS   := $(EXISTING_NTS:.nt=.ttl.gz)
 
 PREFIXES_TTL := $(ROOT_DIR)/prefixes.ttl
@@ -461,7 +487,7 @@ clean:
 	rm -rf $(WORK_DIR)
 
 distclean: clean
-	rm -f $(ROOT_DIR)/wikicore-*.nt $(ROOT_DIR)/wikicore-*.ttl.gz
+	rm -rf $(OUT_DIR)
 
 # -----------------------
 # TODO: generate fulltext corpus
