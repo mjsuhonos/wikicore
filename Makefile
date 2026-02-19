@@ -444,19 +444,12 @@ $(ROOT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
 EXISTING_NTS := $(wildcard $(ROOT_DIR)/wikicore-*.nt)
 TURTLE_GZS   := $(EXISTING_NTS:.nt=.ttl.gz)
 
-RIOT_PREFIXES := \
-  --prefix skos=http://www.w3.org/2004/02/skos/core# \
-  --prefix rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns# \
-  --prefix rdfs=http://www.w3.org/2000/01/rdf-schema# \
-  --prefix owl=http://www.w3.org/2002/07/owl# \
-  --prefix xsd=http://www.w3.org/2001/XMLSchema# \
-  --prefix wd=http://www.wikidata.org/entity/ \
-  --prefix wikicore=https://wikicore.ca/
+PREFIXES_TTL := $(ROOT_DIR)/prefixes.ttl
 
 PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 
-%.ttl.gz: %.nt
-	riot --output=turtle $(RIOT_PREFIXES) $< | pigz -p $(PIGZ_JOBS) > $@
+%.ttl.gz: %.nt $(PREFIXES_TTL)
+	riot --output=turtle $(PREFIXES_TTL) $< 2>/dev/null | pigz -p $(PIGZ_JOBS) > $@
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
