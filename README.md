@@ -59,18 +59,19 @@ Wiki Core is built from Wikidata dumps using a GNU Make pipeline. The pipeline e
 - Python 3
 - Wikidata property-direct and SKOS labels dumps in `source.nosync/`
 
-### Expected Output from `make all`
+### Pipeline stages
 
-Running `make all` generates **2,245 SKOS vocabulary files**:
+The build proceeds through the following stages:
 
-| Target | Files | Description |
-|--------|------:|-------------|
-| `core` | 1 | Core taxonomy (29,508 concepts) |
-| `subjects` | 732 | Individual class QID files |
-| `occ_subjects` | 1,451 | Individual occupation QID files (SKOS about Q5 humans) |
-| `classes` | 42 | Class group files |
-| `occupations` | 19 | Occupation group files (SKOS about Q5 humans) |
-| **TOTAL** | **2,245** | ~5-7 GB disk space |
+1. **Extract core properties** — filters P31, P279, P361 triples from the Wikidata property-direct dump
+2. **Split & partition** — chunks the core properties and partitions them by class into per-subject TSVs
+3. **Prepare subject vocabularies** — sorts, deduplicates, and filters each per-subject TSV against the sitelinks list
+4. **Extract P106 & group Q5 humans** — extracts P106 (occupation) triples, identifies Q5 (human) entities, and groups them by occupation
+5. **Load backbone into Jena TDB2** — loads the concept backbone graph
+6. **Materialize & export core concepts** — runs SPARQL to materialize ancestor paths and child counts, then exports core QIDs
+7. **Extract localized labels** — decompresses and splits the SKOS labels dump by locale
+8. **Generate SKOS vocabs** — assembles concept declarations, concept scheme membership, labels, and `skos:broader` relations into `.nt` files
+9. **Convert to Turtle** — re-serializes `.nt` files to prefixed, compressed Turtle using Jena RIOT
 
 ### Usage
 
@@ -107,31 +108,28 @@ make <target> [OPTIONS]
 | `LOCALE` | `en` | Output language |
 | `JOBS` | `nproc` | Parallel jobs |
 
-**Examples:**
+**Build time:**
+
+On a 48-CPU VPS, `make all -j` takes about 20 minutes and about 48GB of memory, with an average load around 750.
 
 ```sh
-make core              # Generate core taxonomy
-make subjects          # Generate 732 class QID files
-make occ_subjects      # Generate 1,451 occupation QID files
-make all               # Generate all 2,245 files
-make all LOCALE=fr     # Generate French-language output
-make skos_by_occupation OBJECT=Q7888586    # Chemical engineers only
-make turtle            # Convert to compressed Turtle
+real    20m15.173s
+user    612m17.784s
+sys     64m10.606s
 ```
 
-### Pipeline stages
+### Expected Output from `make all`
 
-The build proceeds through the following stages:
+Running `make all` generates **2,245 SKOS vocabulary files**:
 
-1. **Extract core properties** — filters P31, P279, P361 triples from the Wikidata property-direct dump
-2. **Split & partition** — chunks the core properties and partitions them by class into per-subject TSVs
-3. **Prepare subject vocabularies** — sorts, deduplicates, and filters each per-subject TSV against the sitelinks list
-4. **Extract P106 & group Q5 humans** — extracts P106 (occupation) triples, identifies Q5 (human) entities, and groups them by occupation
-5. **Load backbone into Jena TDB2** — loads the concept backbone graph
-6. **Materialize & export core concepts** — runs SPARQL to materialize ancestor paths and child counts, then exports core QIDs
-7. **Extract localized labels** — decompresses and splits the SKOS labels dump by locale
-8. **Generate SKOS vocabs** — assembles concept declarations, concept scheme membership, labels, and `skos:broader` relations into `.nt` files
-9. **Convert to Turtle** — re-serializes `.nt` files to prefixed, compressed Turtle using Jena RIOT
+| Target | Files | Description |
+|--------|------:|-------------|
+| `core` | 1 | Core taxonomy (29,508 concepts) |
+| `subjects` | 732 | Individual class QID files |
+| `occ_subjects` | 1,451 | Individual occupation QID files (SKOS about Q5 humans) |
+| `classes` | 42 | Class group files |
+| `occupations` | 19 | Occupation group files (SKOS about Q5 humans) |
+| **TOTAL** | **2,245** | ~5-7 GB disk space |
 
 ### Output Files
 
@@ -156,7 +154,7 @@ The build proceeds through the following stages:
 
 ### Occupation Vocabularies
 
-**Important:** Occupation SKOS vocabularies generate statements about **Q5 (human) entities**, not about occupation concepts.
+Occupation SKOS vocabularies generate statements about **Q5 (human) entities**, not about occupation concepts.
 
 **Individual occupation files** (`occ_subjects`):
 - One file per occupation QID (e.g., Q7888586 = chemical engineer)
