@@ -6,7 +6,7 @@ Wiki Core is a modern, open approach to subject organization. By anchoring topic
 
 For developers, Wiki Core provides an ID-based, machine-readable vocabulary designed for modern applications. Its faceted, graph-oriented structure and multilingual labels support semantic search, API integration, and flexible data linking. Unlike legacy library vocabularies, it is web-native, interoperable, and ready for automated indexing workflows, while still preserving human oversight.
 
-**Wiki Core does not replace cataloguers** — it repositions their expertise. Rather than encoding complex subject strings, cataloguers focus on curating concepts, defining boundaries, and shaping relationships that guide discovery. This approach makes their judgment more visible and impactful, while allowing systems to handle repetitive or automated tasks.
+Wiki Core does not replace cataloguers — it repositions their expertise. Rather than encoding complex subject strings, cataloguers focus on curating concepts, defining boundaries, and shaping relationships that guide discovery. This approach makes their judgment more visible and impactful, while allowing systems to handle repetitive or automated tasks.
 
 ## Features
 
@@ -17,30 +17,11 @@ For developers, Wiki Core provides an ID-based, machine-readable vocabulary desi
 - Supports metadata, indexing, and subject classification workflows
 - Native multilingual labels and terminology
 
----
-
-## LCSH vs Wiki Core
-
-|   Feature  |        LCSH       |        Wiki Core      |
-|------------|-------------------|-----------------------|
-| Foundation | String-based      | ID-based              |
-| Syntax     | Pre-coordinated   | Faceted               |
-| Language   | English-centric   | Multilingual          |
-| Evolution  | Slow, centralized | Open iteration        |
-| Governance | Institutional     | Community-driven      |
-| Structure  | Encoded hierarchy | Projected graph       |
-| Bias       | Implicit, opaque  | Explicit, inspectable |
-| Interoperability | Library-specific | Web-native Linked Data |
-
-![LCSH vs Wikicore](https://github.com/mjsuhonos/wikicore/blob/main/lcsh_vs_wikicore.png?raw=true)
-
 Wiki Core aligns philosophically with **modern, flexible subject systems**, including:
 
 * **YSO** (Finnish General Upper Ontology for Knowledge Organization) — a multilingual ontology used for Finnish cultural and scientific metadata
 * **GND** (Gemeinsame Normdatei) — a German authority file for persons, organizations, subjects, and works, widely used in Europe
 * **FAST** — a simplified faceted version of LCSH for online catalogs and digital libraries
-
-Unlike these systems, Wiki Core **leverages Wikidata identifiers as its backbone**, providing global interoperability and native multilingual support, while keeping governance and relationships transparent and community-driven.
 
 ---
 
