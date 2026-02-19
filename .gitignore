@@ -3,3 +3,4 @@
 /working.nosync
 *.nt
 
+.DS_Store
