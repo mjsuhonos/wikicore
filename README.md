@@ -110,7 +110,7 @@ make <target> [OPTIONS]
 
 **Build time:**
 
-On a 48-CPU VPS, `make all -j` takes about 20 minutes and about 48GB of memory, with an average load around 750.
+On a 48-CPU VPS, `make all -j` takes about 20 minutes and 48GB of memory, with an average load around 750.
 
 ```sh
 real    20m15.173s
