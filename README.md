@@ -25,6 +25,27 @@ Wiki Core aligns philosophically with **modern, flexible subject systems**, incl
 
 ---
 
+## Governance and Community
+
+Wiki Core is intentionally designed as a community project from the ground up — not a product of any single institution, and not beholden to any vendor or standards body. That independence is a feature, not a limitation.  This project emerged from over a decade working on linked data infrastructure in academic libraries, and a growing conviction that the field needs an alternative that isn't owned by any single institution.
+
+The project is currently in early community formation. The core vocabulary and architecture reflect a year of experimentation and research, but the goal is explicitly not to present a finished system for adoption — it's to find collaborators who will stress-test the ideas, identify gaps, and help shape what Wiki Core becomes.
+
+### What we're looking for:
+
+Developers building discovery systems, cataloguing tools, or semantic pipelines who want an alternative to LCSH that is web-native, Wikidata-anchored, and machine-friendly. Ontologists and information scientists who see problems with existing controlled vocabularies and want to work on something better. Critics who think the approach is wrong in interesting ways.
+
+### How decisions get made (for now):
+
+Wiki Core is currently maintained by a single developer, but the explicit intention is to distribute governance as the community grows. Significant changes to vocabulary structure, identifier policies, or core philosophy will be discussed openly in GitHub Issues before implementation. Nothing about the architecture is considered settled.
+
+### What we explicitly don't want:
+
+For Wiki Core to become another project where one institution's priorities quietly dominate. If you're considering contributing, you have as much right to shape the direction as anyone.
+Contributions, critique, and questions are welcome via GitHub Issues or by reaching out directly.
+
+---
+
 ## Coverage
 
 Wiki Core is derived from Wikidata and filtered to items with English-language sitelinks (~10.1M of 116.6M total entities). Subject coverage is organized into two main tracks: **named classes** (things) and **humans** (people by occupation).
@@ -45,26 +66,6 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
 **Note:** Entities can appear in multiple groups. "Unique entities" counts each QID once; "across groups" counts include the same entity multiple times if it appears in multiple groups.
-
----
-
-## Governance and Community
-
-Wiki Core is intentionally designed as a community project from the ground up — not a product of any single institution, and not beholden to any vendor or standards body. That independence is a feature, not a limitation.
-
-The project is currently in early community formation. The core vocabulary and architecture reflect a year of experimentation and research, but the goal is explicitly not to present a finished system for adoption — it's to find collaborators who will stress-test the ideas, identify gaps, and help shape what Wiki Core becomes.
-What we're looking for:
-
-Developers building discovery systems, cataloguing tools, or semantic pipelines who want an alternative to LCSH that is web-native, Wikidata-anchored, and machine-friendly. Ontologists and information scientists who see problems with existing controlled vocabularies and want to work on something better. Critics who think the approach is wrong in interesting ways.
-
-### How decisions get made (for now):
-
-Wiki Core is currently maintained by a single developer, but the explicit intention is to distribute governance as the community grows. Significant changes to vocabulary structure, identifier policies, or core philosophy will be discussed openly in GitHub Issues before implementation. Nothing about the architecture is considered settled.
-
-### What we explicitly don't want:
-
-For Wiki Core to become another project where one institution's priorities quietly dominate. If you're considering contributing, you have as much right to shape the direction as anyone.
-Contributions, critique, and questions are welcome via GitHub Issues or by reaching out directly.
 
 ---
 
