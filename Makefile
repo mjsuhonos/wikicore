@@ -4,7 +4,11 @@
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
-.PHONY: all core subjects occ_subjects classes occupations skos_subjects skos_class skos_occupation skos_by_occupation turtle clean distclean help
+.PHONY: all core class_qids class_groups occ_qids occ_groups \
+        skos_class_qid skos_class_group skos_occ_qid skos_occ_group \
+        turtle clean distclean help \
+        fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
+        fulltext_occ_qids fulltext_occ_groups fulltext_occ_qid fulltext_occ_group
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -12,19 +16,29 @@ help:
 	@echo "Usage: make <target> [OPTIONS]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  core                                Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  subjects                            Build one .nt per QID across all classes/ TSVs (732 files)"
-	@echo "  occ_subjects                        Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
-	@echo "  classes                             Build one combined .nt per classes/ TSV (42 files)"
-	@echo "  occupations                         Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
-	@echo "  all                                 Run core + subjects + occ_subjects + classes + occupations"
-	@echo "  skos_subjects SUBJECTS='...'        Build SKOS for specific QIDs (eg. 'Q5 Q532')"
-	@echo "  skos_class CLASS_FILE=<path>        Build combined .nt for a single classes/ TSV"
-	@echo "  skos_occupation OCC_FILE=<path>     Build combined .nt for a single occupations/ TSV (output prefixed occ-)"
-	@echo "  skos_by_occupation OBJECT=<QID>     Build SKOS for Q5 humans with a specific occupation QID"
-	@echo "  turtle                              Convert all .nt files to compressed Turtle (.ttl.gz)"
-	@echo "  clean                               Remove working files"
-	@echo "  distclean                           Remove working files and all generated .nt/.ttl.gz"
+	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
+	@echo "  class_qids                            Build one .nt per class QID across all classes/ TSVs (732 files)"
+	@echo "  class_groups                          Build one combined .nt per classes/ TSV (42 files)"
+	@echo "  occ_qids                              Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
+	@echo "  occ_groups                            Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
+	@echo "  all                                   Run core + class_qids + occ_qids + class_groups + occ_groups"
+	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
+	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
+	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
+	@echo "  skos_occ_qid QID=<QID>                Build SKOS for Q5 humans with a specific occupation QID"
+	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
+	@echo "  clean                                 Remove working files"
+	@echo "  distclean                             Remove working files and all generated .nt/.ttl.gz"
+	@echo ""
+	@echo "Fulltext targets (require source.nosync/wikidata5m_text.txt.gz):"
+	@echo "  fulltext_class_qids                    Split fulltext GZ into one TSV per class QID"
+	@echo "  fulltext_class_groups                  Build one combined fulltext TSV per classes/ TSV"
+	@echo "  fulltext_class_qid QIDS='...'          Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
+	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
+	@echo "  fulltext_occ_qids                      Build one fulltext TSV per active occupation QID (people)"
+	@echo "  fulltext_occ_groups                    Build one combined fulltext TSV per occupations/ TSV (people)"
+	@echo "  fulltext_occ_qid QID=<QID>             Build fulltext TSV for Q5 humans with a specific occupation QID"
+	@echo "  fulltext_occ_group OCC_FILE=<path>     Build combined fulltext TSV for a single occupations/ TSV"
 	@echo ""
 	@echo "Options:"
 	@echo "  LOCALE=<lang>   Output language (default: en)"
@@ -32,13 +46,21 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make core"
-	@echo "  make subjects       # 732 class QID files"
-	@echo "  make occ_subjects   # 1,451 occupation QID files"
-	@echo "  make skos_subjects SUBJECTS='Q5 Q532'"
-	@echo "  make skos_class CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make occupations    # 19 occupation group files"
-	@echo "  make skos_occupation OCC_FILE=occupations/engineering.tsv"
-	@echo "  make skos_by_occupation OBJECT=Q7888586    # Chemical engineers"
+	@echo "  make class_qids      # 732 class QID files"
+	@echo "  make occ_qids        # 1,451 occupation QID files"
+	@echo "  make skos_class_qid QIDS='Q5 Q532'"
+	@echo "  make skos_class_group CLASS_FILE=classes/aircraft.tsv"
+	@echo "  make occ_groups      # 19 occupation group files"
+	@echo "  make skos_occ_group OCC_FILE=occupations/engineering.tsv"
+	@echo "  make skos_occ_qid QID=Q7888586    # Chemical engineers"
+	@echo "  make fulltext_class_qids"
+	@echo "  make fulltext_class_groups"
+	@echo "  make fulltext_class_qid QIDS='Q5 Q532'"
+	@echo "  make fulltext_class_group CLASS_FILE=classes/aircraft.tsv"
+	@echo "  make fulltext_occ_qids"
+	@echo "  make fulltext_occ_groups"
+	@echo "  make fulltext_occ_qid QID=Q7888586"
+	@echo "  make fulltext_occ_group OCC_FILE=occupations/engineering.tsv"
 
 # -----------------------
 # Options
@@ -62,10 +84,17 @@ ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
 
 # Output directories (dated release layout)
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)
-CLASSES_OUT_DIR  := $(OUT_DIR)/classes
+CLASS_QIDS_DIR   := $(OUT_DIR)/classes
 CLASS_GROUPS_DIR := $(OUT_DIR)/classes/groups
-OCC_OUT_DIR      := $(OUT_DIR)/occupations
+OCC_QIDS_DIR     := $(OUT_DIR)/occupations
 OCC_GROUPS_DIR   := $(OUT_DIR)/occupations/groups
+
+# Fulltext output directories (under ./fulltext/, mirroring the NT layout)
+FULLTEXT_DIR              := $(ROOT_DIR)/fulltext
+FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes
+FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes/groups
+FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations
+FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations/groups
 
 # -----------------------
 # Inputs
@@ -88,6 +117,15 @@ LABELS_SPLIT_DIR      := $(WORK_DIR)/label_splits
 LABELS_SPLIT_DONE     := $(LABELS_SPLIT_DIR)/.labels_split_done
 CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
+# Fulltext working files
+FULLTEXT_GZ                := $(SOURCE_DIR)/wikidata5m_text.txt.gz
+FULLTEXT_CLASS_QIDS_FILE   := $(WORK_DIR)/fulltext_class_qids.txt
+FULLTEXT_CLASS_SPLIT_DONE  := $(WORK_DIR)/.fulltext_class_split_done
+FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
+FULLTEXT_OCC_QIDS_MAP      := $(WORK_DIR)/fulltext_occ_qids_map.tsv
+FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
+FULLTEXT_OCC_QIDS_DONE     := $(WORK_DIR)/.fulltext_occ_qids_done
+
 # -----------------------
 # Core files
 # -----------------------
@@ -99,10 +137,10 @@ CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 # -----------------------
 # P106 (occupation) files
 # -----------------------
-P106_NT             := $(WORK_DIR)/wikidata-P106-sitelinks.nt
-Q5_SUBJECTS_FILE    := $(SUBJECTS_DIR)/Q5_subjects.tsv
-Q5_OCC_GROUPED      := $(SUBJECTS_DIR)/.q5_occupation_grouped
-OCC_QIDS_FILE       := $(WORK_DIR)/occ_qids.txt
+P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
+Q5_SUBJECTS_FILE     := $(SUBJECTS_DIR)/Q5_subjects.tsv
+Q5_OCC_GROUPED       := $(SUBJECTS_DIR)/.q5_occupation_grouped
+OCC_QIDS_FILE        := $(WORK_DIR)/occ_qids.txt
 ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
 # -----------------------
@@ -124,46 +162,53 @@ SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 FINAL_NT := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
 
 # All class TSV files and their derived targets
-ALL_CLASS_FILES   := $(wildcard $(ROOT_DIR)/classes/*.tsv)
-ALL_CLASS_NAMES   := $(basename $(notdir $(ALL_CLASS_FILES)))
-ALL_CLASS_NTS     := $(foreach C,$(ALL_CLASS_NAMES),$(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).nt)
-ALL_SUBJECT_QIDS  := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $$1}' $(F))))
-ALL_SUBJECT_NTS   := $(foreach Q,$(ALL_SUBJECT_QIDS),$(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
+ALL_CLASS_FILES      := $(wildcard $(ROOT_DIR)/classes/*.tsv)
+ALL_CLASS_NAMES      := $(basename $(notdir $(ALL_CLASS_FILES)))
+ALL_CLASS_GROUP_NTS  := $(foreach C,$(ALL_CLASS_NAMES),$(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).nt)
+ALL_CLASS_QIDS       := $(sort $(foreach F,$(ALL_CLASS_FILES),$(shell awk '{print $$1}' $(F))))
+ALL_CLASS_QIDS_NTS   := $(foreach Q,$(ALL_CLASS_QIDS),$(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
 # All occupation TSV files and their derived targets
-# Occupations now generate SKOS about Q5 (humans) who have those occupations
-ALL_OCC_FILES          := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
-ALL_OCC_NAMES          := $(basename $(notdir $(ALL_OCC_FILES)))
-ALL_OCC_NTS            := $(foreach O,$(ALL_OCC_NAMES),$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(O)-$(LOCALE).nt)
+# Occupations generate SKOS about Q5 (humans) who have those occupations
+ALL_OCC_FILES        := $(wildcard $(ROOT_DIR)/occupations/*.tsv)
+ALL_OCC_NAMES        := $(basename $(notdir $(ALL_OCC_FILES)))
+ALL_OCC_GROUP_NTS    := $(foreach O,$(ALL_OCC_NAMES),$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).nt)
 
 # Individual occupation QID files (one per occupation QID).
 # ALL_OCC_QIDS is the full list from TSV files; used for the "claim" rule and OCC_QIDS_FILE.
-# occ_subjects uses a sub-make driven by active_occ_qids.txt (written by group_q5_by_occupation.py)
+# occ_qids uses a sub-make driven by active_occ_qids.txt (written by group_q5_by_occupation.py)
 # so that QIDs with zero Q5 subjects are never targeted.
-ALL_OCC_QIDS           := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
+ALL_OCC_QIDS         := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
+
+# Fulltext derived targets
+ALL_CLASS_QIDS_FULLTEXT   := $(foreach Q,$(ALL_CLASS_QIDS),$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
+ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).tsv)
+ALL_OCC_GROUPS_FULLTEXT   := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).tsv)
 
 core: $(FINAL_NT)
 
-subjects: $(ALL_SUBJECT_NTS)
+class_qids: $(ALL_CLASS_QIDS_NTS)
 
-occ_subjects: $(Q5_OCC_GROUPED)
+occ_qids: $(Q5_OCC_GROUPED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
-	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
+	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
 
-classes: $(ALL_CLASS_NTS)
+class_groups: $(ALL_CLASS_GROUP_NTS)
 
-occupations: $(ALL_OCC_NTS)
+occ_groups: $(ALL_OCC_GROUP_NTS)
 
-all: core subjects occ_subjects classes occupations
+all: core class_qids occ_qids class_groups occ_groups
 
 # -----------------------
 # Directories
 # -----------------------
 $(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
-$(OUT_DIR) $(CLASSES_OUT_DIR) $(CLASS_GROUPS_DIR) $(OCC_OUT_DIR) $(OCC_GROUPS_DIR):
+$(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
+$(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
+$(FULLTEXT_OCC_QIDS_DIR) $(FULLTEXT_OCC_GROUPS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -280,16 +325,16 @@ $(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
 	@touch $@
 
 # -----------------------
-# 7. Generate SKOS subject (instance) vocabs
-# eg. make skos_subjects SUBJECTS="Q5 Q532"
+# 7. Generate SKOS class QID vocabs
+# eg. make skos_class_qid QIDS="Q5 Q532"
 # -----------------------
 
-SUBJECTS ?= core
+QIDS ?= core
 
-SUBJECT_OUTS := $(foreach S,$(SUBJECTS),\
-  $(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$(S)-$(LOCALE).nt)
+CLASS_QID_OUTS := $(foreach Q,$(QIDS),\
+  $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt)
 
-skos_subjects: $(SUBJECT_OUTS)
+skos_class_qid: $(CLASS_QID_OUTS)
 
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
@@ -347,40 +392,40 @@ $(OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_broader.nt | $(OUT_DIR)
 	cat $^ > $@
 
-$(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
+$(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_concepts.nt \
 	$(SKOS_DIR)/skos_%_concept_scheme.nt \
 	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_%_broader.nt | $(CLASSES_OUT_DIR)
+	$(SKOS_DIR)/skos_%_broader.nt | $(CLASS_QIDS_DIR)
 	cat $^ > $@
 
-$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
+$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_concepts.nt \
 	$(SKOS_DIR)/skos_%_concept_scheme.nt \
 	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_%_broader.nt | $(OCC_OUT_DIR)
+	$(SKOS_DIR)/skos_%_broader.nt | $(OCC_QIDS_DIR)
 	cat $^ > $@
 
 # -----------------------
 # 8. Generate SKOS vocab from a classes/ TSV
-# eg. make skos_class CLASS_FILE=classes/aircraft.tsv
+# eg. make skos_class_group CLASS_FILE=classes/aircraft.tsv
 # -----------------------
 
 CLASS_FILE  ?=
 CLASS_NAME   = $(basename $(notdir $(CLASS_FILE)))
 CLASS_NT     = $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
 
-skos_class:
+skos_class_group:
 ifndef CLASS_FILE
-	$(error CLASS_FILE is not set. Usage: make skos_class CLASS_FILE=classes/aircraft.tsv)
+	$(error CLASS_FILE is not set. Usage: make skos_class_group CLASS_FILE=classes/aircraft.tsv)
 endif
 	$(MAKE) $(CLASS_NT)
 
-# Per-class combined NTs — one rule per classes/*.tsv (used by skos_class and make classes)
+# Per-class combined NTs — one rule per classes/*.tsv (used by skos_class_group and make class_groups)
 define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
-      $(CLASSES_OUT_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
+      $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
 	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
@@ -389,24 +434,23 @@ $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 # -----------------------
 # 9. Generate SKOS vocabs from occupations/ TSVs
 # Each occupation generates SKOS about Q5 (human) entities that have that occupation
-# eg. make skos_occupation OCC_FILE=occupations/engineering.tsv
+# eg. make skos_occ_group OCC_FILE=occupations/engineering.tsv
 # -----------------------
 
 OCC_FILE   ?=
 OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
-OCC_NT      = $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(OCC_NAME)-$(LOCALE).nt
+OCC_NT      = $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).nt
 
-skos_occupation:
+skos_occ_group:
 ifndef OCC_FILE
-	$(error OCC_FILE is not set. Usage: make skos_occupation OCC_FILE=occupations/engineering.tsv)
+	$(error OCC_FILE is not set. Usage: make skos_occ_group OCC_FILE=occupations/engineering.tsv)
 endif
 	$(MAKE) $(OCC_NT)
 
 # Per-occupation combined NTs — one rule per occupations/*.tsv
 # Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
-# Prefixed with "occ-" to avoid collision with same-named classes/ targets
 define OCC_RULE
-$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-occ-$(1)-$(LOCALE).nt: \
+$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $(Q5_OCC_GROUPED) \
     $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
@@ -423,36 +467,36 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 
 # -----------------------
 # 10. Generate SKOS for Q5 humans by occupation QID
-# eg. make skos_by_occupation OBJECT=Q7888586
+# eg. make skos_occ_qid QID=Q7888586
 # -----------------------
 
-OBJECT ?=
-OBJECT_NT = $(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-P106-$(OBJECT)-$(LOCALE).nt
+QID ?=
+OCC_QID_NT = $(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-P106-$(QID)-$(LOCALE).nt
 
-skos_by_occupation:
-ifndef OBJECT
-	$(error OBJECT is not set. Usage: make skos_by_occupation OBJECT=Q7888586)
+skos_occ_qid:
+ifndef QID
+	$(error QID is not set. Usage: make skos_occ_qid QID=Q7888586)
 endif
-	@echo "Generating SKOS for Q5 humans with P106=$(OBJECT)"
-	$(MAKE) $(OBJECT_NT)
+	@echo "Generating SKOS for Q5 humans with P106=$(QID)"
+	$(MAKE) $(OCC_QID_NT)
 
-# Extract Q5 subjects that have P106 = OBJECT
-$(SUBJECTS_DIR)/P106-$(OBJECT)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
-	@echo "Extracting Q5 subjects with P106=$(OBJECT)"
-	@grep -F '<http://www.wikidata.org/entity/$(OBJECT)>' $(P106_NT) \
+# Extract Q5 subjects that have P106 = QID
+$(SUBJECTS_DIR)/P106-$(QID)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
+	@echo "Extracting Q5 subjects with P106=$(QID)"
+	@grep -F '<http://www.wikidata.org/entity/$(QID)>' $(P106_NT) \
 	  | awk '{print $$1}' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
 	  > $@
-	@echo "Found $$(wc -l < $@) Q5 subjects with P106=$(OBJECT)"
+	@echo "Found $$(wc -l < $@) Q5 subjects with P106=$(QID)"
 
-# Generate SKOS from P106-{OBJECT}_subjects.tsv using standard pattern rules
-$(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
+# Generate SKOS from P106-{QID}_subjects.tsv using standard pattern rules
+$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
     $(SUBJECTS_DIR)/P106-%_subjects.tsv \
     $(SKOS_DIR)/skos_P106-%_concepts.nt \
     $(SKOS_DIR)/skos_P106-%_concept_scheme.nt \
     $(SKOS_DIR)/skos_P106-%_labels_$(LOCALE).nt \
-    $(SKOS_DIR)/skos_P106-%_broader.nt | $(OCC_OUT_DIR)
+    $(SKOS_DIR)/skos_P106-%_broader.nt | $(OCC_QIDS_DIR)
 	cat $(SKOS_DIR)/skos_P106-$*_concepts.nt \
 	    $(SKOS_DIR)/skos_P106-$*_concept_scheme.nt \
 	    $(SKOS_DIR)/skos_P106-$*_labels_$(LOCALE).nt \
@@ -464,9 +508,9 @@ $(OCC_OUT_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
 # Convert .nt files to compressed Turtle
 # -----------------------
 EXISTING_NTS := $(wildcard $(OUT_DIR)/wikicore-*.nt) \
-               $(wildcard $(CLASSES_OUT_DIR)/wikicore-*.nt) \
+               $(wildcard $(CLASS_QIDS_DIR)/wikicore-*.nt) \
                $(wildcard $(CLASS_GROUPS_DIR)/wikicore-*.nt) \
-               $(wildcard $(OCC_OUT_DIR)/wikicore-*.nt) \
+               $(wildcard $(OCC_QIDS_DIR)/wikicore-*.nt) \
                $(wildcard $(OCC_GROUPS_DIR)/wikicore-*.nt)
 TURTLE_GZS   := $(EXISTING_NTS:.nt=.ttl.gz)
 
@@ -489,19 +533,191 @@ clean:
 distclean: clean
 	rm -rf $(OUT_DIR)
 
-# -----------------------
-# TODO: generate fulltext corpus
-# -----------------------
+# ===========================================================
+# Fulltext TSV generation from wikidata5m_text.txt.gz
 #
-# eg. gzcat wikidata5m_text.txt.gz \
-#	| sort \
-# convert first column to URIs
-# filter through CORE_NOSUBJECT_QIDS (careful of encoding!)
-# awk to swap places
-#	| awk -F'\t' -v OFS='\t' '{print $2, "<http://www.wikidata.org/entity/" $1 ">"}'
+# Class domain:  one TSV per class QID; one combined TSV per classes/ group
+# Occ domain:    one TSV per occupation group (people in that group);
+#                one TSV per active occupation QID (people with that occupation)
+#
+# Output format per line: text<TAB><http://www.wikidata.org/entity/Q###>
+# ===========================================================
 
+# -----------------------
+# Class domain fulltext
+# eg. make fulltext_class_qids
+#     make fulltext_class_groups
+#     make fulltext_class_qid QIDS='Q5 Q532'
+#     make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
+# -----------------------
 
-# join source.nosync/fulltext/wd5m_uri_first.tsv \
-# working.nosync/Q16521_subjects.tsv \
-# | sed -E 's/^<([^>]+)>[[:space:]]+(.*)$/\2\t<\1>/' \
-# > source.nosync/fulltext/wd5m_wikicore-20260204-Q16521.tsv
+# Collect all class QIDs across all classes/ TSVs
+$(FULLTEXT_CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
+	cat $(ALL_CLASS_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
+
+# Single pass through fulltext GZ: one TSV per class QID.
+# QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
+$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_QIDS_FILE) | $(FULLTEXT_CLASS_QIDS_DIR)
+	@echo "Splitting fulltext into per-class-QID files (single pass)..."
+	gzip -dc $(FULLTEXT_GZ) \
+	  | awk -F'\t' -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
+	      'NR==FNR { qids[$$1]; next } \
+	       $$1 in qids { \
+	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
+	           > dir "/wikicore-" date "-" $$1 "-" locale ".tsv" \
+	       }' \
+	    $(FULLTEXT_CLASS_QIDS_FILE) -
+	@while IFS= read -r q; do \
+	    f="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$q-$(LOCALE).tsv"; \
+	    [ -f "$$f" ] || touch "$$f"; \
+	done < $(FULLTEXT_CLASS_QIDS_FILE)
+	@touch $@
+
+# Claim per-class-QID fulltext TSVs as outputs of the split
+$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_SPLIT_DONE) ;
+
+# All class QID fulltext files
+fulltext_class_qids: $(FULLTEXT_CLASS_SPLIT_DONE)
+
+# Specific class QID(s): make fulltext_class_qid QIDS='Q5 Q532'
+CLASS_QID_FULLTEXT_OUTS := $(foreach Q,$(QIDS),\
+  $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
+
+fulltext_class_qid: $(CLASS_QID_FULLTEXT_OUTS)
+
+# Per-class-group fulltext files — concatenate per-QID files for each classes/*.tsv
+define FULLTEXT_CLASS_GROUP_RULE
+$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).tsv: \
+    $(foreach Q,$(shell awk '{print $$1}' $(ROOT_DIR)/classes/$(1).tsv),\
+      $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv) | $(FULLTEXT_CLASS_GROUPS_DIR)
+	cat $$^ > $$@
+	@echo "Generated $$@"
+endef
+$(foreach C,$(ALL_CLASS_NAMES),$(eval $(call FULLTEXT_CLASS_GROUP_RULE,$(C))))
+
+# All class group fulltext files
+fulltext_class_groups: $(ALL_CLASS_GROUPS_FULLTEXT)
+
+# Specific class group: make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
+CLASS_GROUP_FULLTEXT_TSV = $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).tsv
+
+fulltext_class_group:
+ifndef CLASS_FILE
+	$(error CLASS_FILE is not set. Usage: make fulltext_class_group CLASS_FILE=classes/aircraft.tsv)
+endif
+	$(MAKE) $(CLASS_GROUP_FULLTEXT_TSV)
+
+# -----------------------
+# Occupation domain fulltext
+# eg. make fulltext_occ_groups
+#     make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
+#     make fulltext_occ_qids
+#     make fulltext_occ_qid QID=Q7888586
+#
+# Source QIDs come from the subjects/ working files (URI format) created by
+# group_q5_by_occupation.py:
+#   Q5_{group}_subjects.tsv  — people in each occupation group
+#   P106-{QID}_subjects.tsv  — people with a specific occupation QID
+# URIs are stripped to plain QIDs for matching against the fulltext GZ.
+# Both splits handle people appearing in multiple groups/QIDs (written to each).
+# -----------------------
+
+# Build human-QID → group-name mapping from Q5_*_subjects.tsv files
+$(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
+	@echo "Building occupation group fulltext QID map..."
+	@for occ in $(ALL_OCC_NAMES); do \
+	    f="$(SUBJECTS_DIR)/Q5_$${occ}_subjects.tsv"; \
+	    [ -f "$$f" ] && \
+	      sed 's|<http://www.wikidata.org/entity/||;s|>||g' "$$f" \
+	        | awk -v g="$$occ" '{print $$1 "\t" g}'; \
+	done | LC_ALL=C sort -u > $@
+
+# Single pass through fulltext GZ: one TSV per occupation group.
+# A person in multiple groups is written to each group file.
+$(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
+	@echo "Splitting fulltext into per-occupation-group files (single pass)..."
+	gzip -dc $(FULLTEXT_GZ) \
+	  | awk -F'\t' -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
+	      'NR==FNR { \
+	         if ($$1 in grpmap) grpmap[$$1] = grpmap[$$1] SUBSEP $$2; \
+	         else grpmap[$$1] = $$2; \
+	         next \
+	       } \
+	       $$1 in grpmap { \
+	         n = split(grpmap[$$1], grps, SUBSEP); \
+	         for (i=1; i<=n; i++) { \
+	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
+	             > dir "/wikicore-" date "-" grps[i] "-" locale ".tsv" \
+	         } \
+	       }' \
+	    $(FULLTEXT_OCC_GROUP_MAP) -
+	@for occ in $(ALL_OCC_NAMES); do \
+	    f="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$occ-$(LOCALE).tsv"; \
+	    [ -f "$$f" ] || touch "$$f"; \
+	done
+	@touch $@
+
+# Claim per-occ-group fulltext TSVs as outputs of the split
+$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_GROUPS_DONE) ;
+
+# All occupation group fulltext files
+fulltext_occ_groups: $(ALL_OCC_GROUPS_FULLTEXT)
+
+# Specific occupation group: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
+OCC_GROUP_FULLTEXT_TSV = $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).tsv
+
+fulltext_occ_group:
+ifndef OCC_FILE
+	$(error OCC_FILE is not set. Usage: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv)
+endif
+	$(MAKE) $(OCC_GROUP_FULLTEXT_TSV)
+
+# Build human-QID → occupation-QID mapping from active P106-Q*_subjects.tsv files
+$(FULLTEXT_OCC_QIDS_MAP): $(Q5_OCC_GROUPED) $(ACTIVE_OCC_QIDS_FILE) | $(WORK_DIR)
+	@echo "Building occupation QID fulltext map..."
+	@while IFS= read -r occ_qid; do \
+	    f="$(SUBJECTS_DIR)/P106-$${occ_qid}_subjects.tsv"; \
+	    [ -f "$$f" ] && \
+	      sed 's|<http://www.wikidata.org/entity/||;s|>||g' "$$f" \
+	        | awk -v q="$$occ_qid" '{print $$1 "\t" q}'; \
+	done < $(ACTIVE_OCC_QIDS_FILE) | LC_ALL=C sort -u > $@
+
+# Single pass through fulltext GZ: one TSV per active occupation QID.
+# A person with multiple occupations is written to each occupation QID file.
+$(FULLTEXT_OCC_QIDS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_QIDS_MAP) | $(FULLTEXT_OCC_QIDS_DIR)
+	@echo "Splitting fulltext into per-occupation-QID files (single pass)..."
+	gzip -dc $(FULLTEXT_GZ) \
+	  | awk -F'\t' -v dir="$(FULLTEXT_OCC_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
+	      'NR==FNR { \
+	         if ($$1 in qidmap) qidmap[$$1] = qidmap[$$1] SUBSEP $$2; \
+	         else qidmap[$$1] = $$2; \
+	         next \
+	       } \
+	       $$1 in qidmap { \
+	         n = split(qidmap[$$1], oqids, SUBSEP); \
+	         for (i=1; i<=n; i++) { \
+	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
+	             > dir "/wikicore-" date "-" oqids[i] "-" locale ".tsv" \
+	         } \
+	       }' \
+	    $(FULLTEXT_OCC_QIDS_MAP) -
+	@while IFS= read -r occ_qid; do \
+	    f="$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$$occ_qid-$(LOCALE).tsv"; \
+	    [ -f "$$f" ] || touch "$$f"; \
+	done < $(ACTIVE_OCC_QIDS_FILE)
+	@touch $@
+
+# Claim per-occ-QID fulltext TSVs as outputs of the split
+$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_QIDS_DONE) ;
+
+# All per-occupation-QID fulltext files
+fulltext_occ_qids: $(FULLTEXT_OCC_QIDS_DONE)
+
+# Specific occupation QID: make fulltext_occ_qid QID=Q7888586
+OCC_QID_FULLTEXT_TSV = $(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(QID)-$(LOCALE).tsv
+
+fulltext_occ_qid:
+ifndef QID
+	$(error QID is not set. Usage: make fulltext_occ_qid QID=Q7888586)
+endif
+	$(MAKE) $(OCC_QID_FULLTEXT_TSV)
