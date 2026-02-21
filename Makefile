@@ -124,6 +124,7 @@ CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 # Fulltext working files
 FULLTEXT_GZ                := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 FULLTEXT_CLASS_QIDS_FILE   := $(WORK_DIR)/fulltext_class_qids.txt
+FULLTEXT_CLASS_INSTANCE_MAP := $(WORK_DIR)/fulltext_class_instance_map.tsv
 FULLTEXT_CLASS_SPLIT_DONE  := $(WORK_DIR)/.fulltext_class_split_done
 FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
 FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
@@ -296,7 +297,7 @@ $(Q5_OCC_GROUPED): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_
 	@touch $@
 
 # Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED
-# (replaces the former OCC_QID_SUBJECTS_RULE which did 1 grep pass per QID over P106_NT)
+# (replaces the former OCC_QID_SUBJECTS_RULE which did 1 rg pass per QID over P106_NT)
 $(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED) ;
 
 # -----------------------
@@ -313,7 +314,7 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FI
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
 	tdb2.tdbquery  --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
-	  | grep -F '<http://www.wikidata.org/entity/' \
+	  | rg -F '<http://www.wikidata.org/entity/' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
 	  | LC_ALL=C join -o 2.1 - $(SITELINKS_FILE) \
@@ -355,15 +356,15 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 	@id='$*'; \
 	if [ "$$id" = "core" ]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
-	elif echo "$$id" | grep -qE '^Q5_'; then \
+	elif echo "$$id" | rg -qE '^Q5_'; then \
 		category=$$(echo "$$id" | sed 's/^Q5_//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
-	elif echo "$$id" | grep -qE '^P106-Q'; then \
+	elif echo "$$id" | rg -qE '^P106-Q'; then \
 		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
-	elif echo "$$id" | grep -qE '^Q[0-9]+$$' && grep -qF "$$id" $(OCC_QIDS_FILE); then \
+	elif echo "$$id" | rg -qE '^Q[0-9]+$$' && rg -qF "$$id" $(OCC_QIDS_FILE); then \
 		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
-	elif echo "$$id" | grep -qE '^Q[0-9]+$$'; then \
+	elif echo "$$id" | rg -qE '^Q[0-9]+$$'; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
 	elif [ "$$id" = "P31_other" ]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/other"; \
@@ -488,7 +489,7 @@ endif
 # Extract Q5 subjects that have P106 = QID
 $(SUBJECTS_DIR)/P106-$(QID)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
 	@echo "Extracting Q5 subjects with P106=$(QID)"
-	@grep -F '<http://www.wikidata.org/entity/$(QID)>' $(P106_NT) \
+	@rg -F '<http://www.wikidata.org/entity/$(QID)>' $(P106_NT) \
 	  | awk '{print $$1}' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
@@ -560,18 +561,32 @@ distclean: clean
 $(FULLTEXT_CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
 	cat $(ALL_CLASS_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
-# Single pass through fulltext GZ: one TSV per class QID.
+# Build instance QID -> class QID mapping from P31 relationships
+$(FULLTEXT_CLASS_INSTANCE_MAP): $(CORE_PROPS_NT) $(FULLTEXT_CLASS_QIDS_FILE) | $(WORK_DIR)
+	@echo "Building class instance map from P31 relationships..."
+	@echo "Extracting P31 relationships (this may take a while)..."
+	@rg -F '/prop/direct/P31>' $(CORE_PROPS_NT) \
+	  | awk '{print $$1 "\t" $$3}' \
+	  | sed 's/<http:\/\/www.wikidata.org\/entity\///g; s/>//g' \
+	  | LC_ALL=C sort -u \
+	  | LC_ALL=C join -1 2 -2 1 - $(FULLTEXT_CLASS_QIDS_FILE) \
+	  | awk '{print $$2 "\t" $$1}' \
+	  > $@
+
+# Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
-$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_QIDS_FILE) | $(FULLTEXT_CLASS_QIDS_DIR)
+$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) | $(FULLTEXT_CLASS_QIDS_DIR)
 	@echo "Splitting fulltext into per-class-QID files (single pass)..."
 	gzip -dc $(FULLTEXT_GZ) \
 	  | awk -F'\t' -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
-	      'NR==FNR { qids[$$1]; next } \
-	       $$1 in qids { \
-	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
-	           > (dir "/wikicore-" date "-" $$1 "-" locale ".tsv") \
+	      'NR==FNR { instmap[$$1] = $$2; next } \
+	       $$1 in instmap { \
+	         class_qid = instmap[$$1]; \
+	         outfile = dir "/wikicore-" date "-" class_qid "-" locale ".tsv"; \
+	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" >> outfile; \
+	         close(outfile) \
 	       }' \
-	    $(FULLTEXT_CLASS_QIDS_FILE) -
+	    $(FULLTEXT_CLASS_INSTANCE_MAP) -
 	@while IFS= read -r q; do \
 	    f="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$q-$(LOCALE).tsv"; \
 	    [ -f "$$f" ] || touch "$$f"; \
@@ -648,8 +663,9 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 	       $$1 in grpmap { \
 	         n = split(grpmap[$$1], grps, SUBSEP); \
 	         for (i=1; i<=n; i++) { \
-	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
-	             > (dir "/wikicore-" date "-" grps[i] "-" locale ".tsv") \
+	           outfile = dir "/wikicore-" date "-" grps[i] "-" locale ".tsv"; \
+	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" > outfile; \
+	           close(outfile) \
 	         } \
 	       }' \
 	    $(FULLTEXT_OCC_GROUP_MAP) -
@@ -663,6 +679,8 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_GROUPS_DONE) ;
 
 # All occupation group fulltext files
+ALL_OCC_GROUPS_FULLTEXT := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).tsv)
+
 fulltext_occ_groups: $(ALL_OCC_GROUPS_FULLTEXT)
 
 # Specific occupation group: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
