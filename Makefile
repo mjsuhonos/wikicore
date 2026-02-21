@@ -4,7 +4,8 @@
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
-.PHONY: all core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
+.PHONY: all skos fulltext \
+        core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group \
         turtle clean distclean help \
         fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
@@ -15,37 +16,45 @@ help:
 	@echo ""
 	@echo "Usage: make <target> [OPTIONS]"
 	@echo ""
-	@echo "Targets:"
+	@echo "Aggregate targets:"
+	@echo "  all                                   Build everything: skos + fulltext"
+	@echo "  skos                                  Build all SKOS .nt files (core + class_qids/groups + occ_qids/groups)"
+	@echo "  fulltext                              Build all fulltext TSVs (require source.nosync/wikidata5m_text.txt.gz)"
+	@echo ""
+	@echo "SKOS targets:"
 	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
 	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (732 files)"
 	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (42 files)"
 	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
 	@echo "  skos_occ_groups                       Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
-	@echo "  all                                   Run core + skos_class_qids + skos_occ_qids + skos_class_groups + skos_occ_groups"
 	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
-	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
 	@echo "  skos_occ_qid QID=<QID>                Build SKOS for Q5 humans with a specific occupation QID"
+	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
 	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
+	@echo ""
+	@echo "Fulltext targets:"
+	@echo "  fulltext_class_qids                   Build one fulltext TSV per class QID"
+	@echo "  fulltext_class_groups                 Build one combined fulltext TSV per classes/ TSV"
+	@echo "  fulltext_occ_qids                     Build one fulltext TSV per active occupation QID (people)"
+	@echo "  fulltext_occ_groups                   Build one combined fulltext TSV per occupations/ TSV (people)"
+	@echo "  fulltext_class_qid QIDS='...'         Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
+	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
+	@echo "  fulltext_occ_qid QID=<QID>            Build fulltext TSV for Q5 humans with a specific occupation QID"
+	@echo "  fulltext_occ_group OCC_FILE=<path>    Build combined fulltext TSV for a single occupations/ TSV"
+	@echo ""
+	@echo "Utility targets:"
 	@echo "  clean                                 Remove working files"
 	@echo "  distclean                             Remove working files and all generated .nt/.ttl.gz"
-	@echo ""
-	@echo "Fulltext targets (require source.nosync/wikidata5m_text.txt.gz):"
-	@echo "  fulltext_class_qids                    Split fulltext GZ into one TSV per class QID"
-	@echo "  fulltext_class_groups                  Build one combined fulltext TSV per classes/ TSV"
-	@echo "  fulltext_class_qid QIDS='...'          Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
-	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
-	@echo "  fulltext_occ_qids                      Build one fulltext TSV per active occupation QID (people)"
-	@echo "  fulltext_occ_groups                    Build one combined fulltext TSV per occupations/ TSV (people)"
-	@echo "  fulltext_occ_qid QID=<QID>             Build fulltext TSV for Q5 humans with a specific occupation QID"
-	@echo "  fulltext_occ_group OCC_FILE=<path>     Build combined fulltext TSV for a single occupations/ TSV"
 	@echo ""
 	@echo "Options:"
 	@echo "  LOCALE=<lang>   Output language (default: en)"
 	@echo "  JOBS=<n>        Parallel jobs (default: nproc)"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make core"
+	@echo "  make all"
+	@echo "  make skos"
+	@echo "  make fulltext"
 	@echo "  make skos_class_qids      # 732 class QID files"
 	@echo "  make skos_occ_qids        # 1,451 occupation QID files"
 	@echo "  make skos_class_qid QIDS='Q5 Q532'"
@@ -200,7 +209,11 @@ skos_class_groups: $(ALL_CLASS_GROUP_NTS)
 
 skos_occ_groups: $(ALL_OCC_GROUP_NTS)
 
-all: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
+skos: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
+
+fulltext: fulltext_class_qids fulltext_class_groups fulltext_occ_qids fulltext_occ_groups
+
+all: skos fulltext
 
 # -----------------------
 # Directories
