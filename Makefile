@@ -432,7 +432,8 @@ define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
-	cat $$^ > $$@
+	# Use parallel cat for faster concatenation with many files
+	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
@@ -576,17 +577,30 @@ $(FULLTEXT_CLASS_INSTANCE_MAP): $(CORE_PROPS_NT) $(FULLTEXT_CLASS_QIDS_FILE) | $
 # Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
 $(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) | $(FULLTEXT_CLASS_QIDS_DIR)
-	@echo "Splitting fulltext into per-class-QID files (single pass)..."
-	gzip -dc $(FULLTEXT_GZ) \
-	  | awk -F'\t' -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
-	      'NR==FNR { instmap[$$1] = $$2; next } \
+	@echo "Splitting fulltext into per-class-QID files using parallel processing..."
+	# Split instance map into chunks for parallel processing
+	split -n l/$(JOBS) $(FULLTEXT_CLASS_INSTANCE_MAP) $(WORK_DIR)/instmap_chunk_
+	# Process each chunk in parallel - each process writes to unique temporary files
+	parallel -j $(JOBS) --bar --halt now,fail=1 \
+	  'pigz -dc $(FULLTEXT_GZ) | awk -F'\t' -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} \
+	      '\''NR==FNR { instmap[$$1] = $$2; next } \
 	       $$1 in instmap { \
 	         class_qid = instmap[$$1]; \
-	         outfile = dir "/wikicore-" date "-" class_qid "-" locale ".tsv"; \
+	         # Write to chunk-specific temporary files to avoid race conditions \
+	         outfile = dir "/wikicore-" date "-" class_qid "-" locale ".tsv.chunk" chunk_id; \
 	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" >> outfile; \
 	         close(outfile) \
-	       }' \
-	    $(FULLTEXT_CLASS_INSTANCE_MAP) -
+	       }'\'' {} -' \
+	  ::: $(WORK_DIR)/instmap_chunk_*
+	# Merge chunk files for each class QID (sequential to avoid race conditions)
+	@for qid in $(shell awk '{print $$2}' $(FULLTEXT_CLASS_INSTANCE_MAP) | sort -u); do \
+	    final_file="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv"; \
+	    cat $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv.chunk* 2>/dev/null | sort -u > "$$final_file"; \
+	    rm -f $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv.chunk*; \
+	done
+	# Clean up chunk files
+	rm -f $(WORK_DIR)/instmap_chunk_*
+	# Ensure all expected files exist (touch empty ones)
 	@while IFS= read -r q; do \
 	    f="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$q-$(LOCALE).tsv"; \
 	    [ -f "$$f" ] || touch "$$f"; \
@@ -610,7 +624,8 @@ define FULLTEXT_CLASS_GROUP_RULE
 $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).tsv: \
     $(foreach Q,$(shell awk '{print $$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv) | $(FULLTEXT_CLASS_GROUPS_DIR)
-	cat $$^ > $$@
+	# Use parallel cat for faster concatenation with many files
+	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call FULLTEXT_CLASS_GROUP_RULE,$(C))))
@@ -652,23 +667,30 @@ $(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 # Single pass through fulltext GZ: one TSV per occupation group.
 # A person in multiple groups is written to each group file.
 $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
-	@echo "Splitting fulltext into per-occupation-group files (single pass)..."
-	gzip -dc $(FULLTEXT_GZ) \
-	  | awk -F'\t' -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" \
-	      'NR==FNR { \
-	         if ($$1 in grpmap) grpmap[$$1] = grpmap[$$1] SUBSEP $$2; \
-	         else grpmap[$$1] = $$2; \
-	         next \
-	       } \
+	@echo "Splitting fulltext into per-occupation-group files using parallel processing..."
+	# Split group mapping into chunks for parallel processing
+	split -n l/$(JOBS) $(FULLTEXT_OCC_GROUP_MAP) $(WORK_DIR)/grpmap_chunk_
+	# Process each chunk in parallel with buffered I/O
+	# Process each chunk in parallel - each process writes to unique temporary files
+	parallel -j $(JOBS) --bar --halt now,fail=1 \
+	  'pigz -dc $(FULLTEXT_GZ) | awk -F'\t' -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} \
+	      '\''NR==FNR { grpmap[$$1] = $$2; next } \
 	       $$1 in grpmap { \
-	         n = split(grpmap[$$1], grps, SUBSEP); \
-	         for (i=1; i<=n; i++) { \
-	           outfile = dir "/wikicore-" date "-" grps[i] "-" locale ".tsv"; \
-	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" > outfile; \
-	           close(outfile) \
-	         } \
-	       }' \
-	    $(FULLTEXT_OCC_GROUP_MAP) -
+	         # Write to chunk-specific temporary files to avoid race conditions \
+	         outfile = dir "/wikicore-" date "-" grpmap[$$1] "-" locale ".tsv.chunk" chunk_id; \
+	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" >> outfile; \
+	         close(outfile) \
+	       }'\'' {} -' \
+	  ::: $(WORK_DIR)/grpmap_chunk_*
+	# Merge chunk files for each occupation group (sequential to avoid race conditions)
+	@for group in $(ALL_OCC_NAMES); do \
+	    final_file="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv"; \
+	    cat $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk* 2>/dev/null | sort -u > "$$final_file"; \
+	    rm -f $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk*; \
+	done
+	# Clean up chunk files
+	rm -f $(WORK_DIR)/grpmap_chunk_*
+	# Ensure all expected files exist (touch empty ones)
 	@for occ in $(ALL_OCC_NAMES); do \
 	    f="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$occ-$(LOCALE).tsv"; \
 	    [ -f "$$f" ] || touch "$$f"; \
