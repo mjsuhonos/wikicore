@@ -685,11 +685,11 @@ ifndef OCC_FILE
 endif
 	$(MAKE) $(OCC_GROUP_FULLTEXT_TSV)
 
-# Build human-QID → occupation-QID mapping from active P106-Q*_subjects.tsv files
+# Build human-QID → occupation-QID mapping from active per-QID subjects files
 $(FULLTEXT_OCC_QIDS_MAP): $(Q5_OCC_GROUPED) $(ACTIVE_OCC_QIDS_FILE) | $(WORK_DIR)
 	@echo "Building occupation QID fulltext map..."
 	@while IFS= read -r occ_qid; do \
-	    f="$(SUBJECTS_DIR)/P106-$${occ_qid}_subjects.tsv"; \
+	    f="$(SUBJECTS_DIR)/$${occ_qid}_subjects.tsv"; \
 	    [ -f "$$f" ] && \
 	      sed 's|<http://www.wikidata.org/entity/||;s|>||g' "$$f" \
 	        | awk -v q="$$occ_qid" '{print $$1 "\t" q}'; \
