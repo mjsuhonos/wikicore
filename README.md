@@ -100,27 +100,48 @@ The build proceeds through the following stages:
 make <target> [OPTIONS]
 ```
 
-**Main targets:**
+**Aggregate targets:**
+
+| Target | Description |
+|--------|-------------|
+| `all` | Build everything: `skos` + `fulltext` |
+| `skos` | Build all SKOS `.nt` files (core + class/occ qids and groups) |
+| `fulltext` | Build all fulltext TSVs (requires `source.nosync/wikidata5m_text.txt.gz`) |
+
+**SKOS targets:**
 
 | Target | Description |
 |--------|-------------|
 | `core` | Build the core SKOS vocab (`wikicore-DATE-core-LOCALE.nt`) |
-| `subjects` | Build one `.nt` per class QID (732 files) |
-| `occ_subjects` | Build one `.nt` per occupation QID (1,451 files) |
-| `classes` | Build one combined `.nt` per class group (42 files) |
-| `occupations` | Build one combined `.nt` per occupation group (19 files) |
-| `all` | Run all targets above |
+| `skos_class_qids` | Build one `.nt` per class QID (732 files) |
+| `skos_class_groups` | Build one combined `.nt` per class group (42 files) |
+| `skos_occ_qids` | Build one `.nt` per occupation QID (1,451 files, SKOS about Q5 humans) |
+| `skos_occ_groups` | Build one combined `.nt` per occupation group (19 files, SKOS about Q5 humans) |
+| `skos_class_qid QIDS='Q5 Q532'` | Build SKOS for specific class QIDs |
+| `skos_class_group CLASS_FILE=classes/aircraft.tsv` | Build combined `.nt` for a single class group |
+| `skos_occ_qid QID=Q7888586` | Build SKOS for Q5 humans with a specific occupation QID |
+| `skos_occ_group OCC_FILE=occupations/engineering.tsv` | Build combined `.nt` for a single occupation group |
 | `turtle` | Convert all `.nt` files to compressed Turtle (`.ttl.gz`) |
-| `clean` | Remove working files |
 
-**Targeted builds:**
+**Fulltext targets:**
 
 | Target | Description |
 |--------|-------------|
-| `skos_subjects SUBJECTS='Q5 Q532'` | Build SKOS for specific QIDs |
-| `skos_class CLASS_FILE=classes/aircraft.tsv` | Build combined `.nt` for a single class |
-| `skos_occupation OCC_FILE=occupations/engineering.tsv` | Build SKOS for a specific occupation group |
-| `skos_by_occupation OBJECT=Q7888586` | Build SKOS for Q5 humans with a specific occupation QID |
+| `fulltext_class_qids` | Build one fulltext TSV per class QID |
+| `fulltext_class_groups` | Build one combined fulltext TSV per class group |
+| `fulltext_occ_qids` | Build one fulltext TSV per active occupation QID (people) |
+| `fulltext_occ_groups` | Build one combined fulltext TSV per occupation group (people) |
+| `fulltext_class_qid QIDS='Q5 Q532'` | Build fulltext TSVs for specific class QIDs |
+| `fulltext_class_group CLASS_FILE=classes/aircraft.tsv` | Build combined fulltext TSV for a single class group |
+| `fulltext_occ_qid QID=Q7888586` | Build fulltext TSV for Q5 humans with a specific occupation QID |
+| `fulltext_occ_group OCC_FILE=occupations/engineering.tsv` | Build combined fulltext TSV for a single occupation group |
+
+**Utility targets:**
+
+| Target | Description |
+|--------|-------------|
+| `clean` | Remove working files |
+| `distclean` | Remove working files and all generated `.nt`/`.ttl.gz` |
 
 **Options:**
 
@@ -131,7 +152,7 @@ make <target> [OPTIONS]
 
 **Build time:**
 
-On a 48-CPU VPS, `make all -j` takes about 20 minutes and 48GB of memory, with an average load around 750.
+On a 48-CPU VPS, `make skos -j` takes about 20 minutes and 48GB of memory, with an average load around 750.
 
 ```sh
 real    20m15.173s
@@ -139,53 +160,55 @@ user    612m17.784s
 sys     64m10.606s
 ```
 
-### Expected Output from `make all`
+### Expected Output from `make skos`
 
-Running `make all` generates **2,245 SKOS vocabulary files**:
+Running `make skos` generates **2,245 SKOS vocabulary files**:
 
 | Target | Files | Description |
 |--------|------:|-------------|
 | `core` | 1 | Core taxonomy (29,508 concepts) |
-| `subjects` | 732 | Individual class QID files |
-| `occ_subjects` | 1,451 | Individual occupation QID files (SKOS about Q5 humans) |
-| `classes` | 42 | Class group files |
-| `occupations` | 19 | Occupation group files (SKOS about Q5 humans) |
+| `skos_class_qids` | 732 | Individual class QID files |
+| `skos_occ_qids` | 1,451 | Individual occupation QID files (SKOS about Q5 humans) |
+| `skos_class_groups` | 42 | Class group files |
+| `skos_occ_groups` | 19 | Occupation group files (SKOS about Q5 humans) |
 | **TOTAL** | **2,245** | ~5-7 GB disk space |
 
 ### Output Files
 
-**Individual class files** (732 files):
+Output is written to a dated release directory (`wikicore-YYYYMMDD/`) with the following layout:
+
+**Individual class files** (`skos_class_qids`, 732 files) — `wikicore-DATE/classes/`:
 - `wikicore-20260218-Q3305213-en.nt` (aircraft types)
 - `wikicore-20260218-Q11424-en.nt` (films)
 - ConceptScheme: `https://wikicore.ca/DATE/subjects/{QID}`
 
-**Individual occupation files** (1,451 files):
+**Class group files** (`skos_class_groups`, 42 files) — `wikicore-DATE/classes/groups/`:
+- `wikicore-20260218-aircraft-en.nt` (combined from multiple aircraft class QIDs)
+- `wikicore-20260218-science-en.nt` (combined from multiple science class QIDs)
+
+**Individual occupation files** (`skos_occ_qids`, 1,451 files) — `wikicore-DATE/occupations/`:
 - `wikicore-20260218-Q7888586-en.nt` (chemical engineers - 491 people)
 - `wikicore-20260218-Q82955-en.nt` (politicians - 297,739 people)
 - ConceptScheme: `https://wikicore.ca/DATE/occupations/{QID}`
 - Contains SKOS about Q5 humans with that occupation
 
-**Class group files** (42 files):
-- `wikicore-20260218-aircraft-en.nt` (combined from multiple aircraft class QIDs)
-- `wikicore-20260218-science-en.nt` (combined from multiple science class QIDs)
-
-**Occupation group files** (19 files):
-- `wikicore-20260218-occ-engineering-en.nt` (all engineer types: Q81096, Q1326886, Q13582652, etc.)
-- `wikicore-20260218-occ-science-en.nt` (all scientist types)
+**Occupation group files** (`skos_occ_groups`, 19 files) — `wikicore-DATE/occupations/groups/`:
+- `wikicore-20260218-engineering-en.nt` (all engineer types: Q81096, Q1326886, Q13582652, etc.)
+- `wikicore-20260218-science-en.nt` (all scientist types)
 
 ### Occupation Vocabularies
 
 Occupation SKOS vocabularies generate statements about **Q5 (human) entities**, not about occupation concepts.
 
-**Individual occupation files** (`occ_subjects`):
+**Individual occupation files** (`skos_occ_qids`):
 - One file per occupation QID (e.g., Q7888586 = chemical engineer)
 - Contains SKOS about all Q5 humans with that specific occupation
 - Example: `wikicore-DATE-Q7888586-en.nt` has SKOS about 491 chemical engineers
 
-**Grouped occupation files** (`occupations`):
+**Grouped occupation files** (`skos_occ_groups`):
 - One file per thematic group (e.g., engineering, science, arts)
 - Combines multiple related occupations
-- Example: `wikicore-DATE-occ-engineering-en.nt` includes engineers, electrical engineers, mechanical engineers, chemical engineers, etc. (25 occupation types, 46,684 people total)
+- Example: `wikicore-DATE-engineering-en.nt` includes engineers, electrical engineers, mechanical engineers, chemical engineers, etc. (25 occupation types, 46,684 people total)
 
 The pipeline:
 1. Extracts all P106 (occupation) statements from Wikidata
@@ -219,23 +242,27 @@ SKOS triples included per concept:
 
 ## Verification
 
-After running `make all`, verify output:
+After running `make skos`, verify output (replace `DATE` with the actual run date):
 
 ```bash
 # Count total generated files
-ls -1 wikicore-*.nt | wc -l
+find wikicore-DATE/ -name '*.nt' | wc -l
 # Expected: 2,245
 
-# Count occupation QID files
-cat working.nosync/occ_qids.txt | wc -l
-# Expected: 1,451
+# Count individual class QID files
+ls -1 wikicore-DATE/classes/wikicore-*.nt | wc -l
+# Expected: 732
 
 # Count class group files
-ls -1 wikicore-*.nt | grep -v -E 'Q[0-9]+|occ-|core' | wc -l
+ls -1 wikicore-DATE/classes/groups/wikicore-*.nt | wc -l
 # Expected: 42
 
+# Count individual occupation QID files
+ls -1 wikicore-DATE/occupations/wikicore-*.nt | wc -l
+# Expected: 1,451
+
 # Count occupation group files
-ls -1 wikicore-*-occ-*.nt | wc -l
+ls -1 wikicore-DATE/occupations/groups/wikicore-*.nt | wc -l
 # Expected: 19
 ```
 
