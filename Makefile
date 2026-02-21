@@ -733,4 +733,7 @@ fulltext_occ_qid:
 ifndef QID
 	$(error QID is not set. Usage: make fulltext_occ_qid QID=Q7888586)
 endif
-	$(MAKE) $(OCC_QID_FULLTEXT_TSV)
+	@echo "Building fulltext for occupation QID $(QID)..."
+	mkdir -p $(FULLTEXT_OCC_QIDS_DIR)
+	python3 $(ROOT_DIR)/python/fulltext_occ_qid.py "$(QID)" "$(FULLTEXT_GZ)" "$(SUBJECTS_DIR)" "$(OCC_QID_FULLTEXT_TSV)"
+	@echo "Generated $(OCC_QID_FULLTEXT_TSV)"
