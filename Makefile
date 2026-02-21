@@ -577,7 +577,7 @@ $(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_QIDS_FILE) | $(FUL
 	      'NR==FNR { qids[$$1]; next } \
 	       $$1 in qids { \
 	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
-	           > dir "/wikicore-" date "-" $$1 "-" locale ".tsv" \
+	           > (dir "/wikicore-" date "-" $$1 "-" locale ".tsv") \
 	       }' \
 	    $(FULLTEXT_CLASS_QIDS_FILE) -
 	@while IFS= read -r q; do \
@@ -660,7 +660,7 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 	         n = split(grpmap[$$1], grps, SUBSEP); \
 	         for (i=1; i<=n; i++) { \
 	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
-	             > dir "/wikicore-" date "-" grps[i] "-" locale ".tsv" \
+	             > (dir "/wikicore-" date "-" grps[i] "-" locale ".tsv") \
 	         } \
 	       }' \
 	    $(FULLTEXT_OCC_GROUP_MAP) -
