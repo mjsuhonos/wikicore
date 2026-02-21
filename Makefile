@@ -710,7 +710,7 @@ $(FULLTEXT_OCC_QIDS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_QIDS_MAP) | $(FULLTEXT_
 	         n = split(qidmap[$$1], oqids, SUBSEP); \
 	         for (i=1; i<=n; i++) { \
 	           print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" \
-	             > dir "/wikicore-" date "-" oqids[i] "-" locale ".tsv" \
+	             > (dir "/wikicore-" date "-" oqids[i] "-" locale ".tsv") \
 	         } \
 	       }' \
 	    $(FULLTEXT_OCC_QIDS_MAP) -
