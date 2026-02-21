@@ -245,7 +245,7 @@ $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
-	split -n l/$(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
+	split -n $(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
 # Merge class and occupation names so partition_chunks routes occupation QIDs
@@ -327,7 +327,7 @@ $(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) > $@
 
 $(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
-	split -n l/$(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
+	split -n $(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
 	@touch $@
 
 # -----------------------
@@ -378,8 +378,7 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'awk '\''NR==FNR { core[$$1]; next } $$1 in core && !seen[$$0]++ { print }'\'' \
-	    $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
+	  'awk -f $(ROOT_DIR)/awk/process_labels.awk $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
 	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
 	  | LC_ALL=C sort -u > $@
 
@@ -579,18 +578,10 @@ $(FULLTEXT_CLASS_INSTANCE_MAP): $(CORE_PROPS_NT) $(FULLTEXT_CLASS_QIDS_FILE) | $
 $(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) | $(FULLTEXT_CLASS_QIDS_DIR)
 	@echo "Splitting fulltext into per-class-QID files using parallel processing..."
 	# Split instance map into chunks for parallel processing
-	split -n l/$(JOBS) $(FULLTEXT_CLASS_INSTANCE_MAP) $(WORK_DIR)/instmap_chunk_
+	split -n $(JOBS) $(FULLTEXT_CLASS_INSTANCE_MAP) $(WORK_DIR)/instmap_chunk_
 	# Process each chunk in parallel - each process writes to unique temporary files
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'pigz -dc $(FULLTEXT_GZ) | awk -F'\t' -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} \
-	      '\''NR==FNR { instmap[$$1] = $$2; next } \
-	       $$1 in instmap { \
-	         class_qid = instmap[$$1]; \
-	         # Write to chunk-specific temporary files to avoid race conditions \
-	         outfile = dir "/wikicore-" date "-" class_qid "-" locale ".tsv.chunk" chunk_id; \
-	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" >> outfile; \
-	         close(outfile) \
-	       }'\'' {} -' \
+	  'pigz -dc $(FULLTEXT_GZ) | awk -f $(ROOT_DIR)/awk/process_class_qids.awk -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} {} -' \
 	  ::: $(WORK_DIR)/instmap_chunk_*
 	# Merge chunk files for each class QID (sequential to avoid race conditions)
 	@for qid in $(shell awk '{print $$2}' $(FULLTEXT_CLASS_INSTANCE_MAP) | sort -u); do \
@@ -669,18 +660,11 @@ $(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
 	@echo "Splitting fulltext into per-occupation-group files using parallel processing..."
 	# Split group mapping into chunks for parallel processing
-	split -n l/$(JOBS) $(FULLTEXT_OCC_GROUP_MAP) $(WORK_DIR)/grpmap_chunk_
+	split -n $(JOBS) $(FULLTEXT_OCC_GROUP_MAP) $(WORK_DIR)/grpmap_chunk_
 	# Process each chunk in parallel with buffered I/O
 	# Process each chunk in parallel - each process writes to unique temporary files
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'pigz -dc $(FULLTEXT_GZ) | awk -F'\t' -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} \
-	      '\''NR==FNR { grpmap[$$1] = $$2; next } \
-	       $$1 in grpmap { \
-	         # Write to chunk-specific temporary files to avoid race conditions \
-	         outfile = dir "/wikicore-" date "-" grpmap[$$1] "-" locale ".tsv.chunk" chunk_id; \
-	         print $$2 "\t<http://www.wikidata.org/entity/" $$1 ">" >> outfile; \
-	         close(outfile) \
-	       }'\'' {} -' \
+	  'pigz -dc $(FULLTEXT_GZ) | awk -f $(ROOT_DIR)/awk/process_occ_groups.awk -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} {} -' \
 	  ::: $(WORK_DIR)/grpmap_chunk_*
 	# Merge chunk files for each occupation group (sequential to avoid race conditions)
 	@for group in $(ALL_OCC_NAMES); do \
