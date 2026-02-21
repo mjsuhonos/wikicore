@@ -4,7 +4,7 @@
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
-.PHONY: all core class_qids class_groups occ_qids occ_groups \
+.PHONY: all core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group \
         turtle clean distclean help \
         fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
@@ -17,11 +17,11 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  class_qids                            Build one .nt per class QID across all classes/ TSVs (732 files)"
-	@echo "  class_groups                          Build one combined .nt per classes/ TSV (42 files)"
-	@echo "  occ_qids                              Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
-	@echo "  occ_groups                            Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
-	@echo "  all                                   Run core + class_qids + occ_qids + class_groups + occ_groups"
+	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (732 files)"
+	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (42 files)"
+	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
+	@echo "  skos_occ_groups                       Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
+	@echo "  all                                   Run core + skos_class_qids + skos_occ_qids + skos_class_groups + skos_occ_groups"
 	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
 	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
@@ -46,11 +46,11 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make core"
-	@echo "  make class_qids      # 732 class QID files"
-	@echo "  make occ_qids        # 1,451 occupation QID files"
+	@echo "  make skos_class_qids      # 732 class QID files"
+	@echo "  make skos_occ_qids        # 1,451 occupation QID files"
 	@echo "  make skos_class_qid QIDS='Q5 Q532'"
 	@echo "  make skos_class_group CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make occ_groups      # 19 occupation group files"
+	@echo "  make skos_occ_groups      # 19 occupation group files"
 	@echo "  make skos_occ_group OCC_FILE=occupations/engineering.tsv"
 	@echo "  make skos_occ_qid QID=Q7888586    # Chemical engineers"
 	@echo "  make fulltext_class_qids"
@@ -187,20 +187,20 @@ ALL_OCC_GROUPS_FULLTEXT   := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_
 
 core: $(FINAL_NT)
 
-class_qids: $(ALL_CLASS_QIDS_NTS)
+skos_class_qids: $(ALL_CLASS_QIDS_NTS)
 
-occ_qids: $(Q5_OCC_GROUPED)
+skos_occ_qids: $(Q5_OCC_GROUPED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
 	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
 
-class_groups: $(ALL_CLASS_GROUP_NTS)
+skos_class_groups: $(ALL_CLASS_GROUP_NTS)
 
-occ_groups: $(ALL_OCC_GROUP_NTS)
+skos_occ_groups: $(ALL_OCC_GROUP_NTS)
 
-all: core class_qids occ_qids class_groups occ_groups
+all: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
 
 # -----------------------
 # Directories
