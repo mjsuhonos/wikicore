@@ -8,8 +8,10 @@ NR==FNR {
 }
 
 $1 in grpmap {
-  # Write to chunk-specific temporary files to avoid race conditions
-  outfile = dir "/wikicore-" date "-" grpmap[$1] "-" locale ".tsv.chunk" chunk_id
-  print $2 "\t<http://www.wikidata.org/entity/" $1 ">" >> outfile
-  close(outfile)
+  # Direct approach: write to final file for specific group
+  if (group == "" || grpmap[$1] == group) {
+    outfile = dir "/wikicore-" date "-" grpmap[$1] "-" locale ".tsv"
+    print $2 "\t<http://www.wikidata.org/entity/" $1 ">" >> outfile
+    close(outfile)
+  }
 }
