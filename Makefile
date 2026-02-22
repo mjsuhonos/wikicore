@@ -6,10 +6,10 @@ SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 .PHONY: all skos fulltext \
         core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
-        skos_class_qid skos_class_group skos_occ_qid skos_occ_group \
+        skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
         turtle clean distclean help \
         fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
-        fulltext_occ_groups fulltext_occ_group
+        fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -31,6 +31,7 @@ help:
 	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
 	@echo "  skos_occ_qid QID=<QID>                Build SKOS for Q5 humans with a specific occupation QID"
 	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
+	@echo "  skos_occ_unmatched                    Build SKOS for Q5 humans with no matched occupation"
 	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "Fulltext targets:"
@@ -40,6 +41,7 @@ help:
 	@echo "  fulltext_class_qid QIDS='...'         Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
 	@echo "  fulltext_occ_group OCC_FILE=<path>    Build combined fulltext TSV for a single occupations/ TSV"
+	@echo "  fulltext_occ_unmatched                Build fulltext TSV for Q5 humans with no matched occupation"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  clean                                 Remove working files"
@@ -182,6 +184,10 @@ ALL_OCC_GROUP_NTS    := $(foreach O,$(ALL_OCC_NAMES),$(OCC_GROUPS_DIR)/wikicore-
 # occ_qids uses a sub-make driven by active_occ_qids.txt (written by group_q5_by_occupation.py)
 # so that QIDs with zero Q5 subjects are never targeted.
 ALL_OCC_QIDS         := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
+
+# ALL_OCC_WITH_UNMATCHED includes the synthetic "unmatched" group (Q5 humans with no
+# occupation match) generated as a side effect of group_q5_by_occupation.py.
+ALL_OCC_WITH_UNMATCHED := $(ALL_OCC_NAMES) unmatched
 
 # Fulltext derived targets
 ALL_CLASS_QIDS_FULLTEXT   := $(foreach Q,$(ALL_CLASS_QIDS),$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
@@ -472,6 +478,31 @@ endef
 $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 
 # -----------------------
+# 9b. Generate SKOS for Q5 humans with no matched occupation
+# eg. make skos_occ_unmatched
+# -----------------------
+
+UNMATCHED_OCC_NT := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
+
+# Claim Q5_unmatched_subjects.tsv as output of Q5_OCC_GROUPED
+$(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED) ;
+
+skos_occ_unmatched: $(UNMATCHED_OCC_NT)
+
+$(UNMATCHED_OCC_NT): \
+    $(Q5_OCC_GROUPED) \
+    $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt \
+    $(SKOS_DIR)/skos_Q5_unmatched_concept_scheme.nt \
+    $(SKOS_DIR)/skos_Q5_unmatched_labels_$(LOCALE).nt \
+    $(SKOS_DIR)/skos_Q5_unmatched_broader.nt | $(OCC_GROUPS_DIR)
+	cat $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt \
+	    $(SKOS_DIR)/skos_Q5_unmatched_concept_scheme.nt \
+	    $(SKOS_DIR)/skos_Q5_unmatched_labels_$(LOCALE).nt \
+	    $(SKOS_DIR)/skos_Q5_unmatched_broader.nt \
+	    > $@
+	@echo "Generated $@"
+
+# -----------------------
 # 10. Generate SKOS for Q5 humans by occupation QID
 # eg. make skos_occ_qid QID=Q7888586
 # -----------------------
@@ -626,7 +657,7 @@ endif
 # Build human-QID → group-name mapping from Q5_*_subjects.tsv files
 $(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 	@echo "Building occupation group fulltext QID map..."
-	@for occ in $(ALL_OCC_NAMES); do \
+	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
 	    f="$(SUBJECTS_DIR)/Q5_$${occ}_subjects.tsv"; \
 	    [ -f "$$f" ] && \
 	      sed 's|<http://www.wikidata.org/entity/||;s|>||g' "$$f" \
@@ -645,7 +676,7 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 	  'pigz -dc $(FULLTEXT_GZ) | awk -f $(ROOT_DIR)/awk/process_occ_groups.awk -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} {} -' \
 	  ::: $(WORK_DIR)/grpmap_chunk_*
 	# Merge chunk files for each occupation group (sequential to avoid race conditions)
-	@for group in $(ALL_OCC_NAMES); do \
+	@for group in $(ALL_OCC_WITH_UNMATCHED); do \
 	    final_file="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv"; \
 	    cat $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk* 2>/dev/null | sort -u > "$$final_file"; \
 	    rm -f $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk*; \
@@ -653,7 +684,7 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 	# Clean up chunk files
 	rm -f $(WORK_DIR)/grpmap_chunk_*
 	# Ensure all expected files exist (touch empty ones)
-	@for occ in $(ALL_OCC_NAMES); do \
+	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
 	    f="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$occ-$(LOCALE).tsv"; \
 	    [ -f "$$f" ] || touch "$$f"; \
 	done
@@ -676,4 +707,7 @@ ifndef OCC_FILE
 endif
 	$(MAKE) $(OCC_GROUP_FULLTEXT_TSV)
 
+# Q5 humans with no matched occupation — produced in the same GZ pass as fulltext_occ_groups
+FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).tsv
 
+fulltext_occ_unmatched: $(FULLTEXT_OCC_UNMATCHED_TSV)
