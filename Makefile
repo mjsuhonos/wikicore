@@ -570,17 +570,24 @@ distclean: clean
 $(FULLTEXT_CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
 	cat $(ALL_CLASS_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
-# Build instance QID -> class QID mapping from P31 relationships
-$(FULLTEXT_CLASS_INSTANCE_MAP): $(CORE_PROPS_NT) $(FULLTEXT_CLASS_QIDS_FILE) | $(WORK_DIR)
+# Build instance QID -> class QID mapping from P31 relationships.
+# Runs rg+awk in parallel over pre-split chunks (reusing SPLIT_DONE from step 2).
+# awk hash lookup filters to target class QIDs before sorting, avoiding an
+# expensive sort+join on the full P31 dataset.
+$(FULLTEXT_CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(FULLTEXT_CLASS_QIDS_FILE) | $(WORK_DIR)
 	@echo "Building class instance map from P31 relationships..."
-	@echo "Extracting P31 relationships (this may take a while)..."
-	@rg -F '/prop/direct/P31>' $(CORE_PROPS_NT) \
-	  | awk '{print $$1 "\t" $$3}' \
-	  | sed 's/<http:\/\/www.wikidata.org\/entity\///g; s/>//g' \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join -1 2 -2 1 - $(FULLTEXT_CLASS_QIDS_FILE) \
-	  | awk '{print $$2 "\t" $$1}' \
-	  > $@
+	@export qf="$(FULLTEXT_CLASS_QIDS_FILE)"; \
+	 filter_p31() { \
+	   rg -F '/prop/direct/P31>' "$$1" \
+	   | awk -v f="$$qf" \
+	     'BEGIN{p="<http://www.wikidata.org/entity/";pl=length(p);while((getline q<f)>0)c[q]=1} \
+	      {s=substr($$1,pl+1,length($$1)-pl-1);o=substr($$3,pl+1,length($$3)-pl-1);if(o in c)print s"\t"o}'; \
+	 }; \
+	 export -f filter_p31; \
+	 ls $(SPLIT_DIR)/chunk_* | \
+	   parallel -j $(JOBS) --halt now,fail=1 filter_p31 \
+	   | LC_ALL=C sort -u --parallel=$(JOBS) \
+	   > $@
 
 # Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
