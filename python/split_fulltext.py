@@ -34,6 +34,7 @@ Usage:
 
 import argparse
 import gzip
+import resource
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -161,6 +162,9 @@ def main() -> None:
     p_occs.add_argument("--groups",  nargs="+", help="All expected group names (for empty-file touch)")
 
     args = parser.parse_args()
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (min(hard, 4096), hard))
 
     if args.mode == "classes":
         run_classes(args)

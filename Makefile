@@ -51,23 +51,6 @@ help:
 	@echo "  LOCALE=<lang>   Output language (default: en)"
 	@echo "  JOBS=<n>        Parallel jobs (default: nproc)"
 	@echo ""
-	@echo "Examples:"
-	@echo "  make all"
-	@echo "  make skos"
-	@echo "  make fulltext"
-	@echo "  make skos_class_qids      # 732 class QID files"
-	@echo "  make skos_occ_qids        # 1,451 occupation QID files"
-	@echo "  make skos_class_qid QIDS='Q5 Q532'"
-	@echo "  make skos_class_group CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make skos_occ_groups      # 19 occupation group files"
-	@echo "  make skos_occ_group OCC_FILE=occupations/engineering.tsv"
-	@echo "  make skos_occ_qid QID=Q7888586    # Chemical engineers"
-	@echo "  make fulltext_class_qids"
-	@echo "  make fulltext_class_groups"
-	@echo "  make fulltext_class_qid QIDS='Q5 Q532'"
-	@echo "  make fulltext_class_group CLASS_FILE=classes/aircraft.tsv"
-	@echo "  make fulltext_occ_groups"
-	@echo "  make fulltext_occ_group OCC_FILE=occupations/engineering.tsv"
 
 # -----------------------
 # Options
@@ -251,7 +234,7 @@ $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
-	split -n $(JOBS) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
+	split -l $$(( ($$(wc -l < $(CORE_PROPS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
 # Merge class and occupation names so partition_chunks routes occupation QIDs
@@ -333,7 +316,7 @@ $(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) > $@
 
 $(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
-	split -n $(JOBS) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
+	split -l $$(( ($$(wc -l < $(SKOS_LABELS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
 	@touch $@
 
 # -----------------------
