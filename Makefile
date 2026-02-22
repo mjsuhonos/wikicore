@@ -477,38 +477,15 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 # -----------------------
 
 QID ?=
-OCC_QID_NT = $(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-P106-$(QID)-$(LOCALE).nt
+OCC_QID_NT = $(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(QID)-$(LOCALE).nt
 
 skos_occ_qid:
 ifndef QID
 	$(error QID is not set. Usage: make skos_occ_qid QID=Q7888586)
 endif
 	@echo "Generating SKOS for Q5 humans with P106=$(QID)"
+	$(MAKE) $(Q5_OCC_GROUPED)
 	$(MAKE) $(OCC_QID_NT)
-
-# Extract Q5 subjects that have P106 = QID
-$(SUBJECTS_DIR)/P106-$(QID)_subjects.tsv: $(P106_NT) $(Q5_SUBJECTS_FILE) | $(SUBJECTS_DIR)
-	@echo "Extracting Q5 subjects with P106=$(QID)"
-	@rg -F '<http://www.wikidata.org/entity/$(QID)>' $(P106_NT) \
-	  | awk '{print $$1}' \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join - $(Q5_SUBJECTS_FILE) \
-	  > $@
-	@echo "Found $$(wc -l < $@) Q5 subjects with P106=$(QID)"
-
-# Generate SKOS from P106-{QID}_subjects.tsv using standard pattern rules
-$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-P106-%-$(LOCALE).nt: \
-    $(SUBJECTS_DIR)/P106-%_subjects.tsv \
-    $(SKOS_DIR)/skos_P106-%_concepts.nt \
-    $(SKOS_DIR)/skos_P106-%_concept_scheme.nt \
-    $(SKOS_DIR)/skos_P106-%_labels_$(LOCALE).nt \
-    $(SKOS_DIR)/skos_P106-%_broader.nt | $(OCC_QIDS_DIR)
-	cat $(SKOS_DIR)/skos_P106-$*_concepts.nt \
-	    $(SKOS_DIR)/skos_P106-$*_concept_scheme.nt \
-	    $(SKOS_DIR)/skos_P106-$*_labels_$(LOCALE).nt \
-	    $(SKOS_DIR)/skos_P106-$*_broader.nt \
-	    > $@
-	@echo "Generated $@"
 
 # -----------------------
 # Convert .nt files to compressed Turtle
