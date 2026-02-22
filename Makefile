@@ -269,7 +269,7 @@ $(ALL_NAMES_FILE): $(CLASS_NAMES_FILE) $(OCC_NAMES_FILE)
 $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $(JOBS) --bar --halt now,fail=1 \
-	    'python3 $(ROOT_DIR)/partition_chunks.py {} $(ALL_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
+	    'python3 $(ROOT_DIR)/python/partition_chunks.py {} $(ALL_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
 # -----------------------
 # 3. Prepare subject vocabularies
@@ -584,27 +584,14 @@ $(FULLTEXT_CLASS_INSTANCE_MAP): $(CORE_PROPS_NT) $(FULLTEXT_CLASS_QIDS_FILE) | $
 
 # Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
-$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) | $(FULLTEXT_CLASS_QIDS_DIR)
-	@echo "Splitting fulltext into per-class-QID files using parallel processing..."
-	# Split instance map into chunks for parallel processing
-	split -n $(JOBS) $(FULLTEXT_CLASS_INSTANCE_MAP) $(WORK_DIR)/instmap_chunk_
-	# Process each chunk in parallel - each process writes to unique temporary files
-	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'pigz -dc $(FULLTEXT_GZ) | awk -f $(ROOT_DIR)/awk/process_class_qids.awk -v dir="$(FULLTEXT_CLASS_QIDS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} {} -' \
-	  ::: $(WORK_DIR)/instmap_chunk_*
-	# Merge chunk files for each class QID (sequential to avoid race conditions)
-	@for qid in $(shell awk '{print $$2}' $(FULLTEXT_CLASS_INSTANCE_MAP) | sort -u); do \
-	    final_file="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv"; \
-	    cat $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv.chunk* 2>/dev/null | sort -u > "$$final_file"; \
-	    rm -f $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$qid-$(LOCALE).tsv.chunk*; \
-	done
-	# Clean up chunk files
-	rm -f $(WORK_DIR)/instmap_chunk_*
-	# Ensure all expected files exist (touch empty ones)
-	@while IFS= read -r q; do \
-	    f="$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$q-$(LOCALE).tsv"; \
-	    [ -f "$$f" ] || touch "$$f"; \
-	done < $(FULLTEXT_CLASS_QIDS_FILE)
+$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FULLTEXT_CLASS_QIDS_FILE) | $(FULLTEXT_CLASS_QIDS_DIR)
+	python3 $(ROOT_DIR)/python/split_fulltext.py classes \
+	  --map     $(FULLTEXT_CLASS_INSTANCE_MAP) \
+	  --qids    $(FULLTEXT_CLASS_QIDS_FILE) \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_CLASS_QIDS_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE)
 	@touch $@
 
 # Claim per-class-QID fulltext TSVs as outputs of the split
@@ -667,27 +654,13 @@ $(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 # Single pass through fulltext GZ: one TSV per occupation group.
 # A person in multiple groups is written to each group file.
 $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
-	@echo "Splitting fulltext into per-occupation-group files using parallel processing..."
-	# Split group mapping into chunks for parallel processing
-	split -n $(JOBS) $(FULLTEXT_OCC_GROUP_MAP) $(WORK_DIR)/grpmap_chunk_
-	# Process each chunk in parallel with buffered I/O
-	# Process each chunk in parallel - each process writes to unique temporary files
-	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'pigz -dc $(FULLTEXT_GZ) | awk -f $(ROOT_DIR)/awk/process_occ_groups.awk -v dir="$(FULLTEXT_OCC_GROUPS_DIR)" -v date="$(RUN_DATE)" -v locale="$(LOCALE)" -v chunk_id={#} {} -' \
-	  ::: $(WORK_DIR)/grpmap_chunk_*
-	# Merge chunk files for each occupation group (sequential to avoid race conditions)
-	@for group in $(ALL_OCC_WITH_UNMATCHED); do \
-	    final_file="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv"; \
-	    cat $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk* 2>/dev/null | sort -u > "$$final_file"; \
-	    rm -f $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$group-$(LOCALE).tsv.chunk*; \
-	done
-	# Clean up chunk files
-	rm -f $(WORK_DIR)/grpmap_chunk_*
-	# Ensure all expected files exist (touch empty ones)
-	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
-	    f="$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$$occ-$(LOCALE).tsv"; \
-	    [ -f "$$f" ] || touch "$$f"; \
-	done
+	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
+	  --map     $(FULLTEXT_OCC_GROUP_MAP) \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_OCC_GROUPS_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE) \
+	  --groups  $(ALL_OCC_WITH_UNMATCHED)
 	@touch $@
 
 # Claim per-occ-group fulltext TSVs as outputs of the split
