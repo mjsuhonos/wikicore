@@ -384,7 +384,7 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'awk -f $(ROOT_DIR)/awk/process_labels.awk $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
+	  'awk "NR==FNR{core[\$$1]=1;next}\$$1 in core&&!seen[\$$0]++" $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
 	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
 	  | LC_ALL=C sort -u > $@
 
