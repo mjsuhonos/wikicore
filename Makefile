@@ -98,9 +98,9 @@ OCC_GROUPS_DIR   := $(OUT_DIR)/occupations/groups
 
 # Fulltext output directories (under ./fulltext/, mirroring the NT layout)
 FULLTEXT_DIR              := $(ROOT_DIR)/fulltext
-FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes
-FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes/groups
-FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations/groups
+FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
+FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
+FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 
 # -----------------------
 # Inputs
