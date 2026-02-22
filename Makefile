@@ -390,11 +390,11 @@ $(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(CONCEPT_BACKBONE
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
-$(OUT_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
-	$(SKOS_DIR)/skos_%_concepts.nt \
-	$(SKOS_DIR)/skos_%_concept_scheme.nt \
-	$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_%_broader.nt | $(OUT_DIR)
+$(FINAL_NT): \
+	$(SKOS_DIR)/skos_core_concepts.nt \
+	$(SKOS_DIR)/skos_core_concept_scheme.nt \
+	$(SKOS_DIR)/skos_core_labels_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_core_broader.nt | $(OUT_DIR)
 	cat $^ > $@
 
 $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
@@ -515,7 +515,7 @@ clean:
 	rm -rf $(WORK_DIR)
 
 distclean: clean
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) $(FULLTEXT_DIR)
 
 # ===========================================================
 # Fulltext TSV generation from wikidata5m_text.txt.gz
