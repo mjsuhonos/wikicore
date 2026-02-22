@@ -1,6 +1,6 @@
-/source.nosync
-/local
-/working.nosync
-*.nt
-
 .DS_Store
+/source.nosync
+/working.nosync
+fulltext/*/*.tsv
+fulltext/*/*/*.tsv
+*.nt
