@@ -73,14 +73,14 @@ OCC_NAMES_FILE   := $(WORK_DIR)/occ_names.tsv
 ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
 
 # Output directories (dated release layout)
-OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)
+OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 CLASS_QIDS_DIR   := $(OUT_DIR)/classes
 CLASS_GROUPS_DIR := $(OUT_DIR)/classes/groups
 OCC_QIDS_DIR     := $(OUT_DIR)/occupations
 OCC_GROUPS_DIR   := $(OUT_DIR)/occupations/groups
 
-# Fulltext output directories (under ./fulltext/, mirroring the NT layout)
-FULLTEXT_DIR              := $(ROOT_DIR)/fulltext
+# Fulltext output directories
+FULLTEXT_DIR              := $(OUT_DIR)/fulltext
 FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
 FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
 FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
@@ -91,7 +91,7 @@ FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 PROP_DIRECT_GZ   := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
 SKOS_LABELS_GZ   := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
 # TODO: replace this with a WikiData JSON download file and use the jq command to parse it
-SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_$(LOCALE)_qids.tsv
+SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_en_qids.tsv
 
 # -----------------------
 # Working files
