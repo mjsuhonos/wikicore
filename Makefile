@@ -178,9 +178,33 @@ ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GRO
 
 core: $(FINAL_NT)
 
+# Core-only version of Q5 occupation grouping (skips per-QID subject files)
+Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
+
+$(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py --core-only
+	@touch $@
+
+# Q5_unmatched_subjects.tsv is claimed as output below (after both core and full versions are defined)
+
+# Full version of Q5 occupation grouping (creates per-QID subject files)
+# This is the original Q5_OCC_GROUPED target, now renamed for clarity
+Q5_OCC_GROUPED_FULL := $(Q5_OCC_GROUPED)
+Q5_OCC_GROUPED := $(Q5_OCC_GROUPED_FULL)
+
+$(Q5_OCC_GROUPED_FULL): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
+	@touch $@
+
+# Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED_FULL
+$(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED_FULL) ;
+
+# Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
+# The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
+
 skos_class_qids: $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED)
+skos_occ_qids: $(Q5_OCC_GROUPED_FULL)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
 	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
@@ -285,14 +309,10 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # 3b. Group Q5 humans by occupation (P106_NT and Q5_SUBJECTS_FILE from combined step 1)
 # -----------------------
 
-# Group Q5 subjects by occupation group and by individual QID in a single P106_NT pass
-$(Q5_OCC_GROUPED): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
-	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
-	@touch $@
-
-# Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED
-# (replaces the former OCC_QID_SUBJECTS_RULE which did 1 rg pass per QID over P106_NT)
-$(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED) ;
+# Note: Q5_OCC_GROUPED targets are now defined above in two versions:
+# - Q5_OCC_GROUPED_CORE: for core processing (skips per-QID files)
+# - Q5_OCC_GROUPED_FULL: for occupation processing (creates per-QID files)
+# The Q5_OCC_GROUPED variable points to Q5_OCC_GROUPED_FULL for backward compatibility
 
 # -----------------------
 # 4. Load backbone into Jena
@@ -451,7 +471,7 @@ endif
 # Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
 define OCC_RULE
 $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
-    $(Q5_OCC_GROUPED) \
+    $(Q5_OCC_GROUPED_FULL) \
     $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
@@ -472,13 +492,13 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 
 UNMATCHED_OCC_NT := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
 
-# Claim Q5_unmatched_subjects.tsv as output of Q5_OCC_GROUPED
-$(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED) ;
+# Claim Q5_unmatched_subjects.tsv as output of both core and full versions
+$(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED_CORE) $(Q5_OCC_GROUPED_FULL) ;
 
 skos_occ_unmatched: $(UNMATCHED_OCC_NT)
 
 $(UNMATCHED_OCC_NT): \
-    $(Q5_OCC_GROUPED) \
+    $(Q5_OCC_GROUPED_FULL) \
     $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt \
     $(SKOS_DIR)/skos_Q5_unmatched_concept_scheme.nt \
     $(SKOS_DIR)/skos_Q5_unmatched_labels_$(LOCALE).nt \
@@ -503,7 +523,7 @@ ifndef QID
 	$(error QID is not set. Usage: make skos_occ_qid QID=Q7888586)
 endif
 	@echo "Generating SKOS for Q5 humans with P106=$(QID)"
-	$(MAKE) $(Q5_OCC_GROUPED)
+	$(MAKE) $(Q5_OCC_GROUPED_FULL)
 	$(MAKE) $(OCC_QID_NT)
 
 # -----------------------
@@ -637,7 +657,7 @@ endif
 # -----------------------
 
 # Build human-QID → group-name mapping from Q5_*_subjects.tsv files
-$(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
+$(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
 	@echo "Building occupation group fulltext QID map..."
 	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
 	    f="$(SUBJECTS_DIR)/Q5_$${occ}_subjects.tsv"; \
