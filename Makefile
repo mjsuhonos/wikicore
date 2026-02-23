@@ -209,7 +209,9 @@ $(FULLTEXT_OCC_GROUPS_DIR):
 # -----------------------
 # 1. Extract core properties and P106 in a single decompression pass
 # -----------------------
-$(CORE_PROPS_NT) $(P106_NT) &: $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
+CORE_EXTRACT_DONE := $(WORK_DIR)/.core_extract_done
+
+$(CORE_EXTRACT_DONE): $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
 	pigz -dc $(PROP_DIRECT_GZ) \
 	  | tee \
 	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
@@ -217,11 +219,14 @@ $(CORE_PROPS_NT) $(P106_NT) &: $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR)
 	    >(rg -F '/prop/direct/P106>' \
 	        | rg -F -v '_:' > $(P106_NT)) \
 	    > /dev/null; wait
+	@touch $@
+
+$(CORE_PROPS_NT) $(P106_NT): $(CORE_EXTRACT_DONE)
 
 # Extract Q5 (human) subjects with sitelinks from core props (separate rule to
 # avoid race condition with parallel builds: process substitution in step 1 may
 # not flush Q5_SUBJECTS_FILE before make considers the &: recipe done)
-$(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+$(Q5_SUBJECTS_FILE): $(CORE_EXTRACT_DONE) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
 	rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' $(CORE_PROPS_NT) \
 	  | awk '{print $$1}' \
 	  | LC_ALL=C sort -u \
@@ -233,7 +238,7 @@ $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
 # -----------------------
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
-$(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
+$(SPLIT_DONE): $(CORE_EXTRACT_DONE) | $(SPLIT_DIR)
 	split -l $$(( ($$(wc -l < $(CORE_PROPS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
