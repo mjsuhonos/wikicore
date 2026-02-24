@@ -324,7 +324,7 @@ $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 # -----------------------
 # 5. Materialize + export core concepts
 # -----------------------
-$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FILE)
+$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED)
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
 	# Load sitelink information into Jena
@@ -334,7 +334,6 @@ $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FI
 	  | rg -F '<http://www.wikidata.org/entity/' \
 	  | LC_ALL=C sort -u \
 	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
-	  | LC_ALL=C join -o 2.1 - $(SITELINKS_FILE) \
 	  > $@
 
 # -----------------------
