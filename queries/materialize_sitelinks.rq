@@ -1,0 +1,13 @@
+PREFIX :   <http://example.org/ontology/>
+
+# This query is now redundant since load_sitelinks.py does the actual loading
+# Keeping it as a placeholder for documentation
+INSERT {
+  ?entity :hasSitelink "true" .
+}
+WHERE {
+  # Sitelinks are loaded by load_sitelinks.py script
+  # This query serves as documentation that :hasSitelink properties exist
+  ?entity :hasSitelink ?sitelink .
+  FILTER(?sitelink = "true")
+}

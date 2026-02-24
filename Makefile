@@ -327,6 +327,9 @@ $(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
 $(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FILE)
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
 	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
+	# Load sitelink information into Jena
+	python3 $(ROOT_DIR)/python/load_sitelinks.py $(SITELINKS_FILE) $(JENA_DIR)
+	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_sitelinks.rq"
 	tdb2.tdbquery  --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
 	  | rg -F '<http://www.wikidata.org/entity/' \
 	  | LC_ALL=C sort -u \
