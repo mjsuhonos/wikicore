@@ -52,9 +52,23 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 | In scope (has P31 / concepts) | 9,718,047 |
 | Named classes | 3,399,735 |
 | Humans Q5 | 2,106,826 |
-| Core concepts | 29,508 |
+| Core concepts | ~710,000 |
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
+
+A complete build (`make all`) generates 794 files:
+- **1 core vocabulary file** (29,508 core concepts in older builds, ~710K with leaf nodes included)
+- **777 individual subject files** (one per class QID)
+- **42 class group files** (3,906,431 memberships with overlap)
+- **19 occupation group files** (2,632,939 Q5 memberships with overlap)
+
+**Important Note:** One subject may appear in multiple occupation/class groups due to overlapping categorizations.
+
+#### Subject Distribution
+
+Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096).  Class SKOS files contain statements about class concepts and their instances. One item may appear in multiple groups.
+
+725,879 subjects have P31 types that are not yet assigned to any named group (109,371 distinct class QIDs in `P31_missing_classes.tsv`). These represent uncategorized entities that could potentially be organized into new subject groups in future builds.
 
 ---
 
@@ -158,7 +172,7 @@ Output is written to a dated release directory (`wikicore-YYYYMMDD/`):
 
 | Target | Files | Location | Description |
 |--------|------:|----------|-------------|
-| `core` | 1 | `wikicore-DATE/` | Core taxonomy (29,508 concepts) |
+| `core` | 1 | `wikicore-DATE/` | Core taxonomy |
 | `skos_class_qids` | 777 | `wikicore-DATE/classes/` | One `.nt` per class QID |
 | `skos_class_groups` | 42 | `wikicore-DATE/classes/groups/` | One `.nt` per class group |
 | `skos_occ_qids` | 1,429 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID (SKOS about Q5 humans) |
