@@ -199,18 +199,21 @@ $(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED
 # Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
 # The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
 
-skos_class_qids: $(ALL_CLASS_QIDS_NTS)
+skos_class_qids: $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(CLASS_QIDS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED_FULL)
+skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
-	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
+	  $(MAKE) -j $(JOBS) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
 
-skos_class_groups: $(ALL_CLASS_GROUP_NTS)
+skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_CLASS_GROUP_NTS)
 
-skos_occ_groups: $(ALL_OCC_GROUP_NTS)
+skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
 skos: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
 
@@ -359,19 +362,17 @@ $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 
 $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_FILE) | $(SKOS_DIR)
 	@id='$*'; \
-	if [ "$$id" = "core" ]; then \
+	if [[ "$$id" == "core" ]]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
-	elif echo "$$id" | rg -q '^Q5_'; then \
-		category=$$(echo "$$id" | sed 's/^Q5_//'); \
-		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
-	elif echo "$$id" | rg -q '^P106-Q'; then \
-		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
-		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
-	elif echo "$$id" | rg -q '^Q[0-9]+$$' && rg -qF "$$id" $(OCC_QIDS_FILE); then \
+	elif [[ "$$id" == Q5_* ]]; then \
+		vocab_uri="$(VOCAB_URI)/occupations/$${id#Q5_}"; \
+	elif [[ "$$id" == P106-Q* ]]; then \
+		vocab_uri="$(VOCAB_URI)/occupations/$${id#P106-}"; \
+	elif [[ "$$id" =~ ^Q[0-9]+$$ ]] && grep -qF "$$id" $(OCC_QIDS_FILE); then \
 		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
-	elif echo "$$id" | rg -q '^Q[0-9]+$$'; then \
+	elif [[ "$$id" =~ ^Q[0-9]+$$ ]]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
-	elif [ "$$id" = "P31_other" ]; then \
+	elif [[ "$$id" == "P31_other" ]]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/other"; \
 	else \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
@@ -382,9 +383,8 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'awk "NR==FNR{core[\$$1]=1;next}\$$1 in core&&!seen[\$$0]++" $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
-	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
+	awk 'NR==FNR{core[$$1]=1;next}$$1 in core&&!seen[$$0]++' \
+	  $(SUBJECTS_DIR)/$*_subjects.tsv $(LABELS_SPLIT_DIR)/chunk_* \
 	  | LC_ALL=C sort -u > $@
 
 $(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
@@ -436,8 +436,7 @@ define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
-	# Use parallel cat for faster concatenation with many files
-	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
+	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
@@ -617,8 +616,7 @@ define FULLTEXT_CLASS_GROUP_RULE
 $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).tsv: \
     $(foreach Q,$(shell awk '{print $$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv) | $(FULLTEXT_CLASS_GROUPS_DIR)
-	# Use parallel cat for faster concatenation with many files
-	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
+	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call FULLTEXT_CLASS_GROUP_RULE,$(C))))
