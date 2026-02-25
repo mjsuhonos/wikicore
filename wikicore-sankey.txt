@@ -4,10 +4,10 @@
 //
 // ── Output from 'make all' ────────────────────────────────────────────────
 // Total files generated: 794
-//   - 1 core vocabulary file (29,508 core concepts)
-//   - 732 individual subject files (one per class QID)
-//   - 42 class group files (3,906,431 memberships with overlap)
-//   - 19 occupation group files (2,632,939 Q5 memberships with overlap)
+//   - 1 core vocabulary file (~710K core concepts with leaf nodes)
+//   - 778 individual subject files (one per class QID)
+//   - 43 class group files
+//   - 19 occupation group files
 //
 // IMPORTANT: Occupation SKOS files contain statements about Q5 (human) entities,
 // not about occupation concepts. E.g., wikicore-DATE-occ-engineering-en.nt
@@ -17,93 +17,90 @@
 // Source [AMOUNT] Target
 
 // ── Level 0: sitelink filtering ───────────────────────────────────────────
-//Wikidata [106509289] No English Sitelink
-//Wikidata [10150254] Has English Sitelink
-
-// Of the sitelinked set, some fall outside scope (no P31 or irrelevant)
-//Has English Sitelink [432207] Out of Scope
-//Has English Sitelink [9718047] Filtered Subjects
+Wikidata [116659543] No English Sitelink
+Wikidata [10150254] Has English Sitelink
 
 // ── Level 1: split by type ────────────────────────────────────────────────
-Filtered Subjects [2106826] Q5 Humans
-Filtered Subjects [3456099] P31 No Match
-Filtered Subjects [725879] P31 Longtail Classes
-Filtered Subjects [3399735] Named Classes
-Filtered Subjects [29508] Core Taxonomy
+Has English Sitelink [2106826] Q5 Humans
+Has English Sitelink [895484] P31 No Match
+Has English Sitelink [725879] P31 Longtail Classes
+Has English Sitelink [3399735] P31 Named Classes
+Has English Sitelink [710248] P279-P361 Core Taxonomy
 
 // P31 Longtail Classes: subjects with a labeled P31 type not yet assigned to any named group
 // (109,371 distinct class QIDs in P31_missing_classes.tsv)
-P31 Longtail Classes [725879] Uncategorized P31
+P31 Longtail Classes [725879] Uncategorized
 
 // ── Level 3a: Q5 Humans → occupation groups ───────────────────────────────
 // (unique subjects per group file; one person may appear in multiple groups)
 // Output: 19 occupation SKOS files (wikicore-DATE-occ-{name}-en.nt)
 // Each contains SKOS about Q5 humans with those occupations
-Q5 Humans [690257] Sports
-Q5 Humans [341619] Politics
-Q5 Humans [186885] Film
-Q5 Humans [176881] Literature
-Q5 Humans [169254] Science
-Q5 Humans [146976] Music
-Q5 Humans [112919] Arts
-Q5 Humans [101441] Education
-Q5 Humans [84567] Media
-Q5 Humans [80843] Business
-Q5 Humans [78448] Law
-Q5 Humans [73900] Military
-Q5 Humans [62283] Religion
-Q5 Humans [46684] Engineering
-Q5 Humans [42700] Medicine
-Q5 Humans [32355] Activism
-Q5 Humans [30558] Misc
-Q5 Humans [5868] Genealogy
-Q5 Humans [1050] Other
-Q5 Humans [167451] Unmatched
+Q5 Humans [374676] Sports
+Q5 Humans [360180] Politics
+Q5 Humans [376251] Film
+Q5 Humans [251894] Literature
+Q5 Humans [225672] Science
+Q5 Humans [237828] Music
+Q5 Humans [169693] Arts
+Q5 Humans [108266] Education
+Q5 Humans [99205] Media
+Q5 Humans [89857] Business
+Q5 Humans [96771] Law
+Q5 Humans [79660] Military
+Q5 Humans [84195] Religion
+Q5 Humans [52648] Engineering
+Q5 Humans [51405] Medicine
+Q5 Humans [27097] Activism
+Q5 Humans [28212] Misc
+Q5 Humans [5944] Genealogy
+Q5 Humans [1053] Other
+Q5 Humans [76090] Unmatched
 
 // ── Level 3b: Named Classes → class groups ────────────────────────────────
 // (sum of unique subjects across Q*_subjects.tsv files for each group;
-//  one item may appear in multiple groups; wikimedia has 0 — filtered by sitelinks)
+//  one item may appear in multiple groups)
 // Output: 42 class SKOS files (wikicore-DATE-{classname}-en.nt)
-// Plus: 732 individual QID SKOS files (wikicore-DATE-Q123456-en.nt)
+// Plus: 777 individual QID SKOS files (wikicore-DATE-Q123456-en.nt)
 // Each contains SKOS about the class concepts and their instances
-Named Classes [577240] science
-Named Classes [347174] music
-Named Classes [299797] sports
-Named Classes [212189] village
-Named Classes [181801] film
-Named Classes [181114] community
-Named Classes [162632] organization
-Named Classes [161123] building
-Named Classes [115307] railway
-Named Classes [109340] television
-Named Classes [96214] literary
-Named Classes [93497] name
-Named Classes [92173] water
-Named Classes [82858] military
-Named Classes [80530] school
-Named Classes [80156] media
-Named Classes [67822] political
-Named Classes [67479] city
-Named Classes [66039] district
-Named Classes [60326] municipality
-Named Classes [59464] soccer
-Named Classes [57774] commune
-Named Classes [46900] transport
-Named Classes [46848] astronomy
-Named Classes [45941] town
-Named Classes [44985] recurring
-Named Classes [44375] religion
-Named Classes [43412] cultural
-Named Classes [41005] mountain
-Named Classes [40755] geography
-Named Classes [39959] video
-Named Classes [36402] historic
-Named Classes [35288] aircraft
-Named Classes [32476] other
-Named Classes [31144] olympic
-Named Classes [29881] election
-Named Classes [25473] technology
-Named Classes [23387] character
-Named Classes [19117] group
-Named Classes [18794] language
-Named Classes [8240] comic
+P31 Named Classes [508035] science
+P31 Named Classes [225008] music
+P31 Named Classes [5487] sports
+P31 Named Classes [110495] village
+P31 Named Classes [160335] film
+P31 Named Classes [15833] community
+P31 Named Classes [117831] organization
+P31 Named Classes [119666] building
+P31 Named Classes [3325] railway
+P31 Named Classes [1762] television
+P31 Named Classes [5574] literary
+P31 Named Classes [73536] name
+P31 Named Classes [90673] water
+P31 Named Classes [47576] military
+P31 Named Classes [29019] school
+P31 Named Classes [32251] media
+P31 Named Classes [7637] political
+P31 Named Classes [43707] city
+P31 Named Classes [14373] district
+P31 Named Classes [2307] municipality
+P31 Named Classes [3325] soccer
+P31 Named Classes [3325] commune
+P31 Named Classes [40606] transport
+P31 Named Classes [32462] astronomy
+P31 Named Classes [13524] town
+P31 Named Classes [6416] recurring
+P31 Named Classes [35602] religion
+P31 Named Classes [20177] cultural
+P31 Named Classes [13524] mountain
+P31 Named Classes [9800] geography
+P31 Named Classes [754] video
+P31 Named Classes [2156] historic
+P31 Named Classes [23288] aircraft
+P31 Named Classes [2106826] human
+P31 Named Classes [32476] other
+P31 Named Classes [3325] olympic
+P31 Named Classes [2753] election
+P31 Named Classes [5961] technology
+P31 Named Classes [943] character
+P31 Named Classes [792] group
+P31 Named Classes [8738] language
+P31 Named Classes [771] comic

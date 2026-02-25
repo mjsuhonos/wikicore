@@ -23,9 +23,9 @@ help:
 	@echo ""
 	@echo "SKOS targets:"
 	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (732 files)"
+	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (777 files)"
 	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (42 files)"
-	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
+	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,429 files, SKOS about Q5 humans)"
 	@echo "  skos_occ_groups                       Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
 	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
@@ -59,7 +59,6 @@ LOCALE ?= en
 JOBS ?= $(shell nproc)
 RUN_DATE := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
-export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 
 # -----------------------
 # Paths
@@ -67,7 +66,6 @@ export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 ROOT_DIR         := $(PWD)
 SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
-QUERIES_DIR      := $(ROOT_DIR)/queries
 CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 OCC_NAMES_FILE   := $(WORK_DIR)/occ_names.tsv
 ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
@@ -90,13 +88,12 @@ FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 # -----------------------
 PROP_DIRECT_GZ   := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
 SKOS_LABELS_GZ   := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
-# TODO: replace this with a WikiData JSON download file and use the jq command to parse it
-SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_en_qids.tsv
+SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 
 # -----------------------
 # Working files
 # -----------------------
-JENA_DIR              := $(WORK_DIR)/jena
+SITELINKS_FILE        := $(WORK_DIR)/sitelinks_en_qids.tsv
 SKOS_DIR              := $(WORK_DIR)/skos
 SPLIT_DIR             := $(WORK_DIR)/splits
 SUBJECTS_DIR          := $(WORK_DIR)/subjects
@@ -125,9 +122,9 @@ CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 # -----------------------
 # P106 (occupation) files
 # -----------------------
-P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 Q5_SUBJECTS_FILE     := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED       := $(SUBJECTS_DIR)/.q5_occupation_grouped
+P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 OCC_QIDS_FILE        := $(WORK_DIR)/occ_qids.txt
 ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
@@ -202,18 +199,21 @@ $(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED
 # Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
 # The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
 
-skos_class_qids: $(ALL_CLASS_QIDS_NTS)
+skos_class_qids: $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(CLASS_QIDS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED_FULL)
+skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
-	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
+	  $(MAKE) -j $(JOBS) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
 
-skos_class_groups: $(ALL_CLASS_GROUP_NTS)
+skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_CLASS_GROUP_NTS)
 
-skos_occ_groups: $(ALL_OCC_GROUP_NTS)
+skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
+	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
 skos: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
 
@@ -224,11 +224,17 @@ all: skos fulltext
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
+$(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
 $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
 	mkdir -p $@
+
+# -----------------------
+# 0. Extract QIDs from sitelinks (first column of sitelinks_en.tsv.gz)
+# -----------------------
+$(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
+	pigz -dc $< | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # -----------------------
 # 1. Extract core properties and P106 in a single decompression pass
@@ -315,23 +321,17 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # The Q5_OCC_GROUPED variable points to Q5_OCC_GROUPED_FULL for backward compatibility
 
 # -----------------------
-# 4. Load backbone into Jena
+# 4. Extract core concepts using file operations
 # -----------------------
-$(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
-	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
-	touch $@
-
-# -----------------------
-# 5. Materialize + export core concepts
-# -----------------------
-$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED) $(SITELINKS_FILE)
-	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
-	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
-	tdb2.tdbquery  --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
-	  | rg -F '<http://www.wikidata.org/entity/' \
+$(CORE_CONCEPTS_QIDS): $(CONCEPT_BACKBONE) $(SUBJECTS_SORTED) $(SITELINKS_FILE)
+	# Find entities with ancestors (P279 or P361 relationships)
+	rg -F -e 'P279>' -e 'P361>' $(CONCEPT_BACKBONE) \
+	  | awk '{print $$1}' \
+	  | LC_ALL=C sort -u > $(WORK_DIR)/entities_with_ancestors.tsv
+	
+	# Find intersection: entities with both ancestors AND sitelinks
+	LC_ALL=C join $(WORK_DIR)/entities_with_ancestors.tsv $(SITELINKS_FILE) \
 	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
-	  | LC_ALL=C join -o 2.1 - $(SITELINKS_FILE) \
 	  > $@
 
 # -----------------------
@@ -368,19 +368,17 @@ $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 
 $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_FILE) | $(SKOS_DIR)
 	@id='$*'; \
-	if [ "$$id" = "core" ]; then \
+	if [[ "$$id" == "core" ]]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
-	elif echo "$$id" | rg -qE '^Q5_'; then \
-		category=$$(echo "$$id" | sed 's/^Q5_//'); \
-		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
-	elif echo "$$id" | rg -qE '^P106-Q'; then \
-		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
-		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
-	elif echo "$$id" | rg -qE '^Q[0-9]+$$' && rg -qF "$$id" $(OCC_QIDS_FILE); then \
+	elif [[ "$$id" == Q5_* ]]; then \
+		vocab_uri="$(VOCAB_URI)/occupations/$${id#Q5_}"; \
+	elif [[ "$$id" == P106-Q* ]]; then \
+		vocab_uri="$(VOCAB_URI)/occupations/$${id#P106-}"; \
+	elif [[ "$$id" =~ ^Q[0-9]+$$ ]] && grep -qF "$$id" $(OCC_QIDS_FILE); then \
 		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
-	elif echo "$$id" | rg -qE '^Q[0-9]+$$'; then \
+	elif [[ "$$id" =~ ^Q[0-9]+$$ ]]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
-	elif [ "$$id" = "P31_other" ]; then \
+	elif [[ "$$id" == "P31_other" ]]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/other"; \
 	else \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
@@ -391,9 +389,8 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 
 $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'awk "NR==FNR{core[\$$1]=1;next}\$$1 in core&&!seen[\$$0]++" $(SUBJECTS_DIR)/$*_subjects.tsv {}' \
-	  ::: $(LABELS_SPLIT_DIR)/chunk_* \
+	awk 'NR==FNR{core[$$1]=1;next}$$1 in core&&!seen[$$0]++' \
+	  $(SUBJECTS_DIR)/$*_subjects.tsv $(LABELS_SPLIT_DIR)/chunk_* \
 	  | LC_ALL=C sort -u > $@
 
 $(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
@@ -445,8 +442,7 @@ define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
-	# Use parallel cat for faster concatenation with many files
-	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
+	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
@@ -539,7 +535,7 @@ PREFIXES_TTL := $(ROOT_DIR)/prefixes.ttl
 PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 
 %.ttl.gz: %.nt $(PREFIXES_TTL)
-	riot --output=turtle $(PREFIXES_TTL) $< 2>/dev/null | pigz -p $(PIGZ_JOBS) > $@
+	rapper -i ntriples -o turtle $< 2>/dev/null | pigz -p $(PIGZ_JOBS) > $@
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
@@ -626,8 +622,7 @@ define FULLTEXT_CLASS_GROUP_RULE
 $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).tsv: \
     $(foreach Q,$(shell awk '{print $$1}' $(ROOT_DIR)/classes/$(1).tsv),\
       $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv) | $(FULLTEXT_CLASS_GROUPS_DIR)
-	# Use parallel cat for faster concatenation with many files
-	parallel -j $(JOBS) --bar --halt now,fail=1 'cat {}' ::: $$^ > $$@
+	cat $$^ > $$@
 	@echo "Generated $$@"
 endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call FULLTEXT_CLASS_GROUP_RULE,$(C))))
