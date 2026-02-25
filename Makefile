@@ -373,15 +373,15 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 	@id='$*'; \
 	if [ "$$id" = "core" ]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
-	elif echo "$$id" | rg -qE '^Q5_'; then \
+	elif echo "$$id" | rg -q '^Q5_'; then \
 		category=$$(echo "$$id" | sed 's/^Q5_//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$category"; \
-	elif echo "$$id" | rg -qE '^P106-Q'; then \
+	elif echo "$$id" | rg -q '^P106-Q'; then \
 		occ_qid=$$(echo "$$id" | sed 's/^P106-//'); \
 		vocab_uri="$(VOCAB_URI)/occupations/$$occ_qid"; \
-	elif echo "$$id" | rg -qE '^Q[0-9]+$$' && rg -qF "$$id" $(OCC_QIDS_FILE); then \
+	elif echo "$$id" | rg -q '^Q[0-9]+$$' && rg -qF "$$id" $(OCC_QIDS_FILE); then \
 		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
-	elif echo "$$id" | rg -qE '^Q[0-9]+$$'; then \
+	elif echo "$$id" | rg -q '^Q[0-9]+$$'; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
 	elif [ "$$id" = "P31_other" ]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/other"; \
