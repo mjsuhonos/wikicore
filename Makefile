@@ -23,9 +23,9 @@ help:
 	@echo ""
 	@echo "SKOS targets:"
 	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (732 files)"
+	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (777 files)"
 	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (42 files)"
-	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,451 files, SKOS about Q5 humans)"
+	@echo "  skos_occ_qids                         Build one .nt per occupation QID (1,429 files, SKOS about Q5 humans)"
 	@echo "  skos_occ_groups                       Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
 	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
@@ -88,12 +88,12 @@ FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 # -----------------------
 PROP_DIRECT_GZ   := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
 SKOS_LABELS_GZ   := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
-# TODO: replace this with a WikiData JSON download file and use the jq command to parse it
-SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_en_qids.tsv
+SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 
 # -----------------------
 # Working files
 # -----------------------
+SITELINKS_FILE        := $(WORK_DIR)/sitelinks_en_qids.tsv
 SKOS_DIR              := $(WORK_DIR)/skos
 SPLIT_DIR             := $(WORK_DIR)/splits
 SUBJECTS_DIR          := $(WORK_DIR)/subjects
@@ -229,6 +229,12 @@ $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DI
 $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
 	mkdir -p $@
+
+# -----------------------
+# 0. Extract QIDs from sitelinks (first column of sitelinks_en.tsv.gz)
+# -----------------------
+$(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
+	pigz -dc $< | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # -----------------------
 # 1. Extract core properties and P106 in a single decompression pass
@@ -529,7 +535,7 @@ PREFIXES_TTL := $(ROOT_DIR)/prefixes.ttl
 PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 
 %.ttl.gz: %.nt $(PREFIXES_TTL)
-	riot --output=turtle $(PREFIXES_TTL) $< 2>/dev/null | pigz -p $(PIGZ_JOBS) > $@
+	rapper -i ntriples -o turtle $< 2>/dev/null | pigz -p $(PIGZ_JOBS) > $@
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
