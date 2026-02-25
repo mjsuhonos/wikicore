@@ -32,7 +32,7 @@ with open(sitelinks_file) as f:
         if qid_uri.startswith('<http://www.wikidata.org/entity/') and qid_uri.endswith('>'):
             temp_file.write(f"  {qid_uri} :hasSitelink \"true\" .\n")
             count += 1
-            if count % 100000 == 0:
+            if count % 1000000 == 0:
                 print(f"Processed {count} sitelinks...")
 
 temp_file.write("}\n")
