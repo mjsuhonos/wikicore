@@ -54,7 +54,8 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 | Humans Q5 | 2,106,826 |
 | Core concepts | ~710,000 |
 
-![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
+![Coverage Sankey Diagram](https://raw.githubusercontent.com/mjsuhonos/wikicore/refs/heads/main/wikicore-sankey.png)
+
 
 A complete build (`make all`) generates 795 files:
 - **1 core vocabulary file** (29,508 core concepts in older builds, ~710K with leaf nodes included)
