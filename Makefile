@@ -59,7 +59,6 @@ LOCALE ?= en
 JOBS ?= $(shell nproc)
 RUN_DATE := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
-export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 
 # -----------------------
 # Paths
@@ -67,7 +66,6 @@ export JENA_JAVA_OPTS="-Xmx32g -XX:ParallelGCThreads=$(JOBS)"
 ROOT_DIR         := $(PWD)
 SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
-QUERIES_DIR      := $(ROOT_DIR)/queries
 CLASS_NAMES_FILE := $(ROOT_DIR)/class_names.tsv
 OCC_NAMES_FILE   := $(WORK_DIR)/occ_names.tsv
 ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
@@ -96,7 +94,6 @@ SITELINKS_FILE   := $(SOURCE_DIR)/sitelinks_en_qids.tsv
 # -----------------------
 # Working files
 # -----------------------
-JENA_DIR              := $(WORK_DIR)/jena
 SKOS_DIR              := $(WORK_DIR)/skos
 SPLIT_DIR             := $(WORK_DIR)/splits
 SUBJECTS_DIR          := $(WORK_DIR)/subjects
@@ -125,9 +122,9 @@ CORE_CONCEPTS_QIDS  := $(SUBJECTS_DIR)/core_subjects.tsv
 # -----------------------
 # P106 (occupation) files
 # -----------------------
-P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 Q5_SUBJECTS_FILE     := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED       := $(SUBJECTS_DIR)/.q5_occupation_grouped
+P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 OCC_QIDS_FILE        := $(WORK_DIR)/occ_qids.txt
 ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
@@ -224,7 +221,7 @@ all: skos fulltext
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(JENA_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
+$(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
 $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
@@ -315,26 +312,17 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # The Q5_OCC_GROUPED variable points to Q5_OCC_GROUPED_FULL for backward compatibility
 
 # -----------------------
-# 4. Load backbone into Jena
+# 4. Extract core concepts using file operations
 # -----------------------
-$(JENA_DIR)/tdb2_loaded: $(CONCEPT_BACKBONE) | $(JENA_DIR)
-	tdb2.tdbloader --loc $(JENA_DIR) $(CONCEPT_BACKBONE)
-	touch $@
-
-# -----------------------
-# 5. Materialize + export core concepts
-# -----------------------
-$(CORE_CONCEPTS_QIDS): $(JENA_DIR)/tdb2_loaded $(SUBJECTS_SORTED)
-	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_ancestors.rq"
-	# Child count materialization disabled - now using sitelink-based filtering instead
-	# tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_child_counts.rq"
-	# Load sitelink information into Jena
-	python3 $(ROOT_DIR)/python/load_sitelinks.py $(SITELINKS_FILE) $(JENA_DIR)
-	tdb2.tdbupdate --loc $(JENA_DIR) --update="$(QUERIES_DIR)/materialize_sitelinks.rq"
-	tdb2.tdbquery  --loc $(JENA_DIR) --query="$(QUERIES_DIR)/export.rq" --results=TSV \
-	  | rg -F '<http://www.wikidata.org/entity/' \
+$(CORE_CONCEPTS_QIDS): $(CONCEPT_BACKBONE) $(SUBJECTS_SORTED) $(SITELINKS_FILE)
+	# Find entities with ancestors (P279 or P361 relationships)
+	rg -F -e 'P279>' -e 'P361>' $(CONCEPT_BACKBONE) \
+	  | awk '{print $$1}' \
+	  | LC_ALL=C sort -u > $(WORK_DIR)/entities_with_ancestors.tsv
+	
+	# Find intersection: entities with both ancestors AND sitelinks
+	LC_ALL=C join $(WORK_DIR)/entities_with_ancestors.tsv $(SITELINKS_FILE) \
 	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join -v 1 - $(SUBJECTS_SORTED) \
 	  > $@
 
 # -----------------------
