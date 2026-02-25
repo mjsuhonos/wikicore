@@ -5,8 +5,8 @@
 // ── Output from 'make all' ────────────────────────────────────────────────
 // Total files generated: 794
 //   - 1 core vocabulary file (~710K core concepts with leaf nodes)
-//   - 777 individual subject files (one per class QID)
-//   - 42 class group files
+//   - 778 individual subject files (one per class QID)
+//   - 43 class group files
 //   - 19 occupation group files
 //
 // IMPORTANT: Occupation SKOS files contain statements about Q5 (human) entities,
@@ -95,7 +95,8 @@ P31 Named Classes [9800] geography
 P31 Named Classes [754] video
 P31 Named Classes [2156] historic
 P31 Named Classes [23288] aircraft
-P31 Named Classes [2130745] other
+P31 Named Classes [2106826] human
+P31 Named Classes [32476] other
 P31 Named Classes [3325] olympic
 P31 Named Classes [2753] election
 P31 Named Classes [5961] technology

@@ -56,10 +56,10 @@ Wiki Core is derived from Wikidata and filtered to items with English-language s
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
-A complete build (`make all`) generates 794 files:
+A complete build (`make all`) generates 795 files:
 - **1 core vocabulary file** (29,508 core concepts in older builds, ~710K with leaf nodes included)
-- **777 individual subject files** (one per class QID)
-- **42 class group files** (3,906,431 memberships with overlap)
+- **778 individual subject files** (one per class QID)
+- **43 class group files** (3,906,431 memberships with overlap)
 - **19 occupation group files** (2,632,939 Q5 memberships with overlap)
 
 **Important Note:** One subject may appear in multiple occupation/class groups due to overlapping categorizations.
