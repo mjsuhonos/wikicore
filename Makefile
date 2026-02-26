@@ -117,8 +117,7 @@ FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
 CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
 SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
-CORE_P279_QIDS      := $(SUBJECTS_DIR)/core_p279_subjects.tsv
-CORE_P361_QIDS      := $(SUBJECTS_DIR)/core_p361_subjects.tsv
+CORE_QIDS           := $(SUBJECTS_DIR)/core_subjects.tsv
 
 # -----------------------
 # P106 (occupation) files
@@ -145,8 +144,7 @@ SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 # -----------------------
 # Default target
 # -----------------------
-FINAL_P279_NT       := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-p279-$(LOCALE).nt
-FINAL_P361_NT       := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-p361-$(LOCALE).nt
+FINAL_CORE_NT       := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
 
 # All class TSV files and their derived targets
 ALL_CLASS_FILES      := $(wildcard $(ROOT_DIR)/classes/*.tsv)
@@ -175,7 +173,7 @@ ALL_OCC_WITH_UNMATCHED := $(ALL_OCC_NAMES) unmatched
 ALL_CLASS_QIDS_FULLTEXT   := $(foreach Q,$(ALL_CLASS_QIDS),$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
 ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).tsv)
 
-core: $(FINAL_P279_NT) $(FINAL_P361_NT)
+core: $(FINAL_CORE_NT)
 
 # Core-only version of Q5 occupation grouping (skips per-QID subject files)
 Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
@@ -325,19 +323,12 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # -----------------------
 # 4. Extract core concepts using file operations
 # -----------------------
-$(CORE_P279_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+$(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
 	LC_ALL=C comm -23 \
-	  <(rg -F 'P279>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u) \
-	  <(rg -F 'P31>'  $(CORE_PROPS_NT)   | awk '{print $$1}' | LC_ALL=C sort -u) \
+	  <(rg -F -e 'P279>' -e 'P361>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
+	  <(rg -F 'P31>' $(CORE_PROPS_NT) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
 	  | LC_ALL=C join - $(SITELINKS_FILE) \
-	  | LC_ALL=C sort -u > $@
-
-$(CORE_P361_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
-	LC_ALL=C comm -23 \
-	  <(rg -F 'P361>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u) \
-	  <(rg -F 'P31>'  $(CORE_PROPS_NT)   | awk '{print $$1}' | LC_ALL=C sort -u) \
-	  | LC_ALL=C join - $(SITELINKS_FILE) \
-	  | LC_ALL=C sort -u > $@
+	  | uniq > $@
 
 # -----------------------
 # 6. Extract and split localized labels
@@ -361,16 +352,11 @@ CLASS_QID_OUTS := $(foreach Q,$(QIDS),\
 
 skos_class_qid: $(CLASS_QID_OUTS)
 
-CONCEPT_BACKBONE_P279_SORTED := $(WORK_DIR)/concept_backbone_p279_sorted.nt
-CONCEPT_BACKBONE_P361_SORTED := $(WORK_DIR)/concept_backbone_p361_sorted.nt
-
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
            $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt \
            $(SKOS_DIR)/skos_%_broader.nt \
-           $(CONCEPT_BACKBONE_SORTED) \
-           $(CONCEPT_BACKBONE_P279_SORTED) \
-           $(CONCEPT_BACKBONE_P361_SORTED)
+           $(CONCEPT_BACKBONE_SORTED)
 
 $(SKOS_DIR)/skos_%_concepts.nt: $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
 	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
@@ -380,10 +366,6 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 	@id='$*'; \
 	if [[ "$$id" == "core" ]]; then \
 		vocab_uri="$(VOCAB_URI)/core"; \
-	elif [[ "$$id" == "core_p279" ]]; then \
-		vocab_uri="$(VOCAB_URI)/core/p279"; \
-	elif [[ "$$id" == "core_p361" ]]; then \
-		vocab_uri="$(VOCAB_URI)/core/p361"; \
 	elif [[ "$$id" == Q5_* ]]; then \
 		vocab_uri="$(VOCAB_URI)/occupations/$${id#Q5_}"; \
 	elif [[ "$$id" == P106-Q* ]]; then \
@@ -408,41 +390,18 @@ $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
 	  | LC_ALL=C sort -u > $@
 
 $(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
-	LC_ALL=C sort -u $< > $@
-
-$(CONCEPT_BACKBONE_P279_SORTED): $(CONCEPT_BACKBONE)
-	rg -F 'P279>' $< | LC_ALL=C sort -u > $@
-
-$(CONCEPT_BACKBONE_P361_SORTED): $(CONCEPT_BACKBONE)
-	rg -F 'P361>' $< | LC_ALL=C sort -u > $@
+	LC_ALL=C sort -u --parallel=$(JOBS) $< > $@
 
 $(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(CONCEPT_BACKBONE_SORTED) | $(SKOS_DIR)
 	LC_ALL=C join $(SUBJECTS_DIR)/$*_subjects.tsv $(CONCEPT_BACKBONE_SORTED) \
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
-$(SKOS_DIR)/skos_core_p279_broader.nt: $(CORE_P279_QIDS) $(CONCEPT_BACKBONE_P279_SORTED) | $(SKOS_DIR)
-	LC_ALL=C join $(CORE_P279_QIDS) $(CONCEPT_BACKBONE_P279_SORTED) \
-	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
-	  > $@
-
-$(SKOS_DIR)/skos_core_p361_broader.nt: $(CORE_P361_QIDS) $(CONCEPT_BACKBONE_P361_SORTED) | $(SKOS_DIR)
-	LC_ALL=C join $(CORE_P361_QIDS) $(CONCEPT_BACKBONE_P361_SORTED) \
-	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
-	  > $@
-
-$(FINAL_P279_NT): \
-	$(SKOS_DIR)/skos_core_p279_concepts.nt \
-	$(SKOS_DIR)/skos_core_p279_concept_scheme.nt \
-	$(SKOS_DIR)/skos_core_p279_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_core_p279_broader.nt | $(OUT_DIR)
-	cat $^ > $@
-
-$(FINAL_P361_NT): \
-	$(SKOS_DIR)/skos_core_p361_concepts.nt \
-	$(SKOS_DIR)/skos_core_p361_concept_scheme.nt \
-	$(SKOS_DIR)/skos_core_p361_labels_$(LOCALE).nt \
-	$(SKOS_DIR)/skos_core_p361_broader.nt | $(OUT_DIR)
+$(FINAL_CORE_NT): \
+	$(SKOS_DIR)/skos_core_concepts.nt \
+	$(SKOS_DIR)/skos_core_concept_scheme.nt \
+	$(SKOS_DIR)/skos_core_labels_$(LOCALE).nt \
+	$(SKOS_DIR)/skos_core_broader.nt | $(OUT_DIR)
 	cat $^ > $@
 
 $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
@@ -562,8 +521,7 @@ endif
 # -----------------------
 # Convert .nt files to compressed Turtle
 # -----------------------
-TURTLE_GZS := $(FINAL_P279_NT:.nt=.ttl.gz) \
-              $(FINAL_P361_NT:.nt=.ttl.gz) \
+TURTLE_GZS := $(FINAL_CORE_NT:.nt=.ttl.gz) \
               $(ALL_CLASS_QIDS_NTS:.nt=.ttl.gz) \
               $(ALL_CLASS_GROUP_NTS:.nt=.ttl.gz) \
               $(ALL_OCC_GROUP_NTS:.nt=.ttl.gz)
