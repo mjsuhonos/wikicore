@@ -6,7 +6,7 @@ Wiki Core is a modern, open approach to subject organization. By anchoring topic
 
 For developers, Wiki Core provides an ID-based, machine-readable vocabulary designed for modern applications. Its faceted, graph-oriented structure and multilingual labels support semantic search, API integration, and flexible data linking. Unlike legacy library vocabularies, it is web-native, interoperable, and ready for automated indexing workflows, while still preserving human oversight.
 
-Wiki Core does not replace cataloguers — it repositions their expertise. Rather than encoding complex subject strings, cataloguers focus on curating concepts, defining boundaries, and shaping relationships that guide discovery. This approach makes their judgment more visible and impactful, while allowing systems to handle repetitive or automated tasks.
+Wiki Core is designed to augment human expertise, not displace it. The goal is to shift effort from mechanical encoding toward higher-order judgment — curating concepts, defining scope, and shaping the relationships that make discovery meaningful. Systems handle the repetitive work; people shape what it means.
 
 ## Features
 
@@ -27,13 +27,13 @@ Wiki Core aligns philosophically with **modern, flexible subject systems**, incl
 
 ## Community Governance
 
-Wiki Core is intentionally designed as a community project from the ground up — not a product of any single institution, and not beholden to any vendor or standards body. That independence is a feature, not a limitation.  This project emerged from over a decade working on linked data infrastructure in academic libraries, and a growing conviction that the field needs an alternative that isn't owned by any single institution.
+Wiki Core is intentionally designed as a community project from the ground up — not a product of any single institution, and not beholden to any vendor or standards body. That independence is a feature, not a limitation. This project emerged from over a decade working on linked data infrastructure in academic libraries, and a growing conviction that the field needs a genuinely open alternative.
 
 The project is currently in early community formation. The core vocabulary and architecture reflect a year of experimentation and research, but the goal is explicitly not to present a finished system for adoption — it's to find collaborators who will stress-test the ideas, identify gaps, and help shape what Wiki Core becomes.
 
 ### What we're looking for:
 
-Developers building discovery systems, cataloguing tools, or semantic pipelines who want an alternative to LCSH that is web-native, Wikidata-anchored, and machine-friendly. Ontologists and information scientists who see problems with existing controlled vocabularies and want to work on something better. Critics who think the approach is wrong in interesting ways.
+Developers building discovery systems, cataloguing tools, or semantic pipelines who want an alternative to LCSH that is web-native. Ontologists and information scientists who see problems with existing controlled vocabularies and want to work on something better. Critics who think the approach is wrong in interesting ways.
 
 Wiki Core is currently maintained by a single developer, but the explicit intention is to distribute governance as the community grows. Significant changes to vocabulary structure, identifier policies, or core philosophy will be discussed openly in GitHub Issues before implementation. Nothing about the architecture is considered settled. If you're considering contributing, you have as much right to shape the direction as anyone. Contributions, critique, and questions are welcome via GitHub Issues or by reaching out directly.
 
@@ -41,33 +41,13 @@ Wiki Core is currently maintained by a single developer, but the explicit intent
 
 ## Coverage
 
-Wiki Core is derived from Wikidata and filtered to items with English-language sitelinks (~10.1M of 116.6M total entities). Subject coverage is organized into two main tracks: **named classes** (things) and **humans** (people by occupation).
-
-### Subject filtering pipeline
-
-| Stage | Count |
-|-------|------:|
-| Total Wikidata entities | 116,659,543 |
-| Has English sitelink | 10,150,254 |
-| In scope (has P31 / concepts) | 9,718,047 |
-| Named classes | 3,399,735 |
-| Humans Q5 | 2,106,826 |
-| Core concepts | ~710,000 |
+Subject coverage is drawn from Wikidata items with English-language sitelinks, organized into two main tracks: **named classes** (things) and **humans** (people by occupation).
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
+### Subject Distribution
 
-A complete build (`make all`) generates 795 files:
-- **1 core vocabulary file** (29,508 core concepts in older builds, ~710K with leaf nodes included)
-- **778 individual subject files** (one per class QID)
-- **43 class group files** (3,906,431 memberships with overlap)
-- **19 occupation group files** (2,632,939 Q5 memberships with overlap)
-
-**Important Note:** One subject may appear in multiple occupation/class groups due to overlapping categorizations.
-
-#### Subject Distribution
-
-Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096).  Class SKOS files contain statements about class concepts and their instances. One item may appear in multiple groups.
+Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096). Class SKOS files contain statements about class concepts and their instances. Items may appear in multiple groups.
 
 725,879 subjects have P31 types that are not yet assigned to any named group (109,371 distinct class QIDs in `P31_missing_classes.tsv`). These represent uncategorized entities that could potentially be organized into new subject groups in future builds.
 
@@ -75,16 +55,13 @@ Occupation SKOS files contain statements about Q5 (human) entities, not about oc
 
 ## Build Pipeline
 
-Wiki Core is built from Wikidata dumps using a GNU Make pipeline. The pipeline extracts SKOS concept vocabularies in N-Triples format and fulltext TSVs, organized by subject class or occupation group.
+Wiki Core is built using a GNU Make pipeline. The pipeline extracts SKOS concept vocabularies in N-Triples format and fulltext TSVs, organized by subject class or occupation group.
 
-### Prerequisites
-
-- GNU Make, `parallel`, `pigz`, `ripgrep` (`rg`)
-- `rapper` (Raptor RDF utilities, for `make turtle`)
-- Python 3
-- Wikidata property-direct and SKOS labels dumps in `source.nosync/`
-
-### Pipeline stages
+A complete build (`make all`) generates 795 files:
+- **1 core vocabulary file** (~710K with leaf nodes included)
+- **778 individual subject files** (one per class QID)
+- **43 class group files** (3,906,431 Named classes with overlap)
+- **19 occupation group files** (2,632,939 Q5 Humans Q5 with overlap)
 
 The build proceeds through the following stages:
 
@@ -96,6 +73,13 @@ The build proceeds through the following stages:
 6. **Extract localized labels** — decompresses and splits the SKOS labels dump by locale
 7. **Generate SKOS vocabs** — assembles concept declarations, concept scheme membership, labels, and `skos:broader` relations into `.nt` files
 8. **Convert to Turtle** — re-serializes `.nt` files to compressed Turtle using `rapper`
+
+### Prerequisites
+
+- GNU Make, `parallel`, `pigz`, `ripgrep` (`rg`)
+- `rapper` (Raptor RDF utilities, for `make turtle`)
+- Python 3
+- Wikidata property-direct and SKOS labels dumps in `source.nosync/`
 
 ### Usage
 
@@ -118,8 +102,8 @@ make <target> [OPTIONS]
 | `core` | Build the core SKOS vocab (`wikicore-DATE-core-LOCALE.nt`) |
 | `skos_class_qids` | Build one `.nt` per class QID (777 files) |
 | `skos_class_groups` | Build one combined `.nt` per class group (42 files) |
-| `skos_occ_qids` | Build one `.nt` per occupation QID (1,429 files, SKOS about Q5 humans) |
-| `skos_occ_groups` | Build one combined `.nt` per occupation group (19 files, SKOS about Q5 humans) |
+| `skos_occ_qids` | Build one `.nt` per occupation QID (1,429 files) |
+| `skos_occ_groups` | Build one combined `.nt` per occupation group (19 files) |
 | `skos_occ_unmatched` | Build SKOS for Q5 humans with no matched occupation |
 | `skos_class_qid QIDS='Q5 Q532'` | Build SKOS for specific class QIDs |
 | `skos_class_group CLASS_FILE=classes/aircraft.tsv` | Build combined `.nt` for a single class group |
@@ -167,24 +151,20 @@ sys     166m41.555s
 
 ## Output
 
-### SKOS vocabularies (`make skos`)
-
-Output is written to a dated release directory (`wikicore-YYYYMMDD/`):
+`make skos` output is written to a dated release directory (`wikicore-YYYYMMDD/`):
 
 | Target | Files | Location | Description |
 |--------|------:|----------|-------------|
 | `core` | 1 | `wikicore-DATE/` | Core taxonomy |
 | `skos_class_qids` | 777 | `wikicore-DATE/classes/` | One `.nt` per class QID |
 | `skos_class_groups` | 42 | `wikicore-DATE/classes/groups/` | One `.nt` per class group |
-| `skos_occ_qids` | 1,429 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID (SKOS about Q5 humans) |
-| `skos_occ_groups` | 19 | `wikicore-DATE/occupations/groups/` | One `.nt` per occupation group (SKOS about Q5 humans) |
+| `skos_occ_qids` | 1,429 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID |
+| `skos_occ_groups` | 19 | `wikicore-DATE/occupations/groups/` | One `.nt` per occupation group |
 | **TOTAL** | **2,268** | | ~11 GB disk space |
 
-Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.ttl.gz` after `make turtle`). SKOS triples per concept: `rdf:type skos:Concept`, `skos:inScheme`, `skos:prefLabel`/`skos:altLabel`, and `skos:broader`. Occupation files generate SKOS about **Q5 (human) entities** grouped by occupation, not about the occupation concepts themselves.
+Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.ttl.gz` after `make turtle`). SKOS triples per concept: `rdf:type skos:Concept`, `skos:inScheme`, `skos:prefLabel`/`skos:altLabel`, and `skos:broader`.
 
-### Fulltext TSVs (`make fulltext`)
-
-Fulltext output is written to `wikicore-DATE/fulltext/`, mirroring the SKOS layout. Each line: `text<TAB><http://www.wikidata.org/entity/QID>`.
+`make fulltext` output is written to `wikicore-DATE/fulltext/`, mirroring the SKOS layout. Each line: `text<TAB><http://www.wikidata.org/entity/QID>`.
 
 | Target | Files | Location |
 |--------|------:|----------|
