@@ -245,7 +245,10 @@ $(CORE_EXTRACT_DONE): $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJEC
 	pigz -dc $(PROP_DIRECT_GZ) \
 	  | tee \
 	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
-	        | rg -F -v '_:' > $(CORE_PROPS_NT)) \
+	        | rg -F -v '_:' \
+	        | awk -v sf=$(SITELINKS_FILE) \
+	            'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+	        > $(CORE_PROPS_NT)) \
 	    >(rg -F '/prop/direct/P106>' \
 	        | rg -F -v '_:' > $(P106_NT)) \
 	    > /dev/null; wait
@@ -256,11 +259,9 @@ $(CORE_PROPS_NT) $(P106_NT): $(CORE_EXTRACT_DONE)
 # Extract Q5 (human) subjects with sitelinks from core props (separate rule to
 # avoid race condition with parallel builds: process substitution in step 1 may
 # not flush Q5_SUBJECTS_FILE before make considers the &: recipe done)
-$(Q5_SUBJECTS_FILE): $(CORE_EXTRACT_DONE) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+$(Q5_SUBJECTS_FILE): $(CORE_EXTRACT_DONE) | $(SUBJECTS_DIR)
 	rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' $(CORE_PROPS_NT) \
 	  | awk '{print $$1}' \
-	  | LC_ALL=C sort -u \
-	  | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - \
 	  | LC_ALL=C sort -u > $@
 
 # -----------------------
@@ -293,10 +294,10 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 # 3. Prepare subject vocabularies
 # -----------------------
 
-# Sort, deduplicate, and pre-filter each per-subject TSV against sitelinks
-$(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(SITELINKS_FILE)
+# Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
+$(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
-	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} | LC_ALL=C join -o 2.1 $(SITELINKS_FILE) - | LC_ALL=C sort -u > "$$tmp" && mv "$$tmp" {1}' \
+	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
 	@touch $@
 
@@ -323,12 +324,11 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # -----------------------
 # 4. Extract core concepts using file operations
 # -----------------------
-$(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+$(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 	LC_ALL=C comm -23 \
 	  <(rg -F -e 'P279>' -e 'P361>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
 	  <(rg -F 'P31>' $(CORE_PROPS_NT) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
-	  | LC_ALL=C join - $(SITELINKS_FILE) \
-	  | uniq > $@
+	  | LC_ALL=C sort -u > $@
 
 # -----------------------
 # 6. Extract and split localized labels
