@@ -6,7 +6,7 @@ Wiki Core is a modern, open approach to subject organization. By anchoring topic
 
 For developers, Wiki Core provides an ID-based, machine-readable vocabulary designed for modern applications. Its faceted, graph-oriented structure and multilingual labels support semantic search, API integration, and flexible data linking. Unlike legacy library vocabularies, it is web-native, interoperable, and ready for automated indexing workflows, while still preserving human oversight.
 
-Wiki Core does not replace cataloguers — it repositions their expertise. Rather than encoding complex subject strings, cataloguers focus on curating concepts, defining boundaries, and shaping relationships that guide discovery. This approach makes their judgment more visible and impactful, while allowing systems to handle repetitive or automated tasks.
+Wiki Core is designed to augment human expertise, not displace it. The goal is to shift effort from mechanical encoding toward higher-order judgment — curating concepts, defining scope, and shaping the relationships that make discovery meaningful. Systems handle the repetitive work; people shape what it means.
 
 ## Features
 
