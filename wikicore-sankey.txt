@@ -17,15 +17,15 @@
 // Source [AMOUNT] Target
 
 // ── Level 0: sitelink filtering ───────────────────────────────────────────
-Wikidata [116659543] No English Sitelink
-Wikidata [10150254] Has English Sitelink
+//Wikidata [116659543] No English Sitelink
+Wikidata [10150254] Has Sitelink
 
 // ── Level 1: split by type ────────────────────────────────────────────────
-Has English Sitelink [2106826] Q5 Humans
-Has English Sitelink [895484] P31 No Match
-Has English Sitelink [725879] P31 Longtail Classes
-Has English Sitelink [3399735] P31 Named Classes
-Has English Sitelink [710248] P279-P361 Core Taxonomy
+//Has Sitelink [2106826] Q5 Humans
+Has Sitelink [895484] P31 No Match
+Has Sitelink [725879] P31 Longtail Classes
+Has Sitelink [3399735] P31 Named Classes
+Has Sitelink [710248] P279-P361 Core Taxonomy
 
 // P31 Longtail Classes: subjects with a labeled P31 type not yet assigned to any named group
 // (109,371 distinct class QIDs in P31_missing_classes.tsv)
