@@ -45,23 +45,6 @@ Subject coverage is drawn from Wikidata items with English-language sitelinks, o
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
-### Filtering pipeline
-
-| Stage | Count |
-|-------|------:|
-| Total Wikidata entities | 116,659,543 |
-| Has English sitelink | 10,150,254 |
-| In scope (has P31 / concepts) | 9,718,047 |
-| Named classes | 3,399,735 |
-| Humans Q5 | 2,106,826 |
-| Core concepts | ~710,000 |
-
-A complete build (`make all`) generates 795 files:
-- **1 core vocabulary file** (~710K with leaf nodes included)
-- **778 individual subject files** (one per class QID)
-- **43 class group files** (3,906,431 memberships with overlap)
-- **19 occupation group files** (2,632,939 Q5 memberships with overlap)
-
 ### Subject Distribution
 
 Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096). Class SKOS files contain statements about class concepts and their instances. Items may appear in multiple groups.
@@ -74,12 +57,11 @@ Occupation SKOS files contain statements about Q5 (human) entities, not about oc
 
 Wiki Core is built using a GNU Make pipeline. The pipeline extracts SKOS concept vocabularies in N-Triples format and fulltext TSVs, organized by subject class or occupation group.
 
-### Prerequisites
-
-- GNU Make, `parallel`, `pigz`, `ripgrep` (`rg`)
-- `rapper` (Raptor RDF utilities, for `make turtle`)
-- Python 3
-- Wikidata property-direct and SKOS labels dumps in `source.nosync/`
+A complete build (`make all`) generates 795 files:
+- **1 core vocabulary file** (~710K with leaf nodes included)
+- **778 individual subject files** (one per class QID)
+- **43 class group files** (3,906,431 Named classes with overlap)
+- **19 occupation group files** (2,632,939 Q5 Humans Q5 with overlap)
 
 The build proceeds through the following stages:
 
@@ -91,6 +73,13 @@ The build proceeds through the following stages:
 6. **Extract localized labels** — decompresses and splits the SKOS labels dump by locale
 7. **Generate SKOS vocabs** — assembles concept declarations, concept scheme membership, labels, and `skos:broader` relations into `.nt` files
 8. **Convert to Turtle** — re-serializes `.nt` files to compressed Turtle using `rapper`
+
+### Prerequisites
+
+- GNU Make, `parallel`, `pigz`, `ripgrep` (`rg`)
+- `rapper` (Raptor RDF utilities, for `make turtle`)
+- Python 3
+- Wikidata property-direct and SKOS labels dumps in `source.nosync/`
 
 ### Usage
 
