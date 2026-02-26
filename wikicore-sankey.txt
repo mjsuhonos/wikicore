@@ -3,9 +3,9 @@
 // One subject may appear in multiple occupation/class groups.
 //
 // ── Output from 'make all' ────────────────────────────────────────────────
-// Total files generated: 794
-//   - 1 core vocabulary file (~710K core concepts with leaf nodes)
-//   - 778 individual subject files (one per class QID)
+// Total files generated: 840 (skos, excl. per-occupation-QID files)
+//   - 1 core vocabulary file (116,907 core concepts)
+//   - 777 individual subject files (one per class QID with sitelinked subjects)
 //   - 43 class group files
 //   - 19 occupation group files
 //
@@ -23,13 +23,12 @@ Wikidata [10150254] Has Sitelink
 // ── Level 1: split by type ────────────────────────────────────────────────
 //Has Sitelink [2106826] Q5 Humans
 Has Sitelink [895484] P31 No Match
-Has Sitelink [725879] P31 Longtail Classes
+Has Sitelink [895485] P31 Longtail Classes
 Has Sitelink [3399735] P31 Named Classes
 Has Sitelink [710248] P279-P361 Core Taxonomy
 
 // P31 Longtail Classes: subjects with a labeled P31 type not yet assigned to any named group
-// (109,371 distinct class QIDs in P31_missing_classes.tsv)
-P31 Longtail Classes [725879] Uncategorized
+P31 Longtail Classes [895485] Uncategorized
 
 // ── Level 3a: Q5 Humans → occupation groups ───────────────────────────────
 // (unique subjects per group file; one person may appear in multiple groups)
@@ -59,7 +58,7 @@ Q5 Humans [76090] Unmatched
 // ── Level 3b: Named Classes → class groups ────────────────────────────────
 // (sum of unique subjects across Q*_subjects.tsv files for each group;
 //  one item may appear in multiple groups)
-// Output: 42 class SKOS files (wikicore-DATE-{classname}-en.nt)
+// Output: 43 class SKOS files (wikicore-DATE-{classname}-en.nt)
 // Plus: 777 individual QID SKOS files (wikicore-DATE-Q123456-en.nt)
 // Each contains SKOS about the class concepts and their instances
 P31 Named Classes [508035] science

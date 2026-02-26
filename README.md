@@ -49,7 +49,7 @@ Subject coverage is drawn from Wikidata items with English-language sitelinks, o
 
 Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096). Class SKOS files contain statements about class concepts and their instances. Items may appear in multiple groups.
 
-725,879 subjects have P31 types that are not yet assigned to any named group (109,371 distinct class QIDs in `P31_missing_classes.tsv`). These represent uncategorized entities that could potentially be organized into new subject groups in future builds.
+895,485 subjects have P31 types that are not yet assigned to any named group. These represent uncategorized entities that could potentially be organized into new subject groups in future builds.
 
 ---
 
@@ -57,11 +57,12 @@ Occupation SKOS files contain statements about Q5 (human) entities, not about oc
 
 Wiki Core is built using a GNU Make pipeline. The pipeline extracts SKOS concept vocabularies in N-Triples format and fulltext TSVs, organized by subject class or occupation group.
 
-A complete build (`make all`) generates 795 files:
-- **1 core vocabulary file** (~710K with leaf nodes included)
-- **778 individual subject files** (one per class QID)
-- **43 class group files** (3,906,431 Named classes with overlap)
-- **19 occupation group files** (2,632,939 Q5 Humans Q5 with overlap)
+A complete build (`make all`) generates 2,289 SKOS files and 840 fulltext TSVs:
+- **1 core vocabulary file** (116,907 concepts)
+- **777 individual class QID files** (one per class QID with sitelinked subjects)
+- **43 class group files** (3,906,431 named class subjects with overlap)
+- **up to 1,449 occupation QID files** (Q5 humans, varies by active subjects)
+- **19 occupation group files** (Q5 humans by occupation group)
 
 The build proceeds through the following stages:
 
@@ -101,8 +102,8 @@ make <target> [OPTIONS]
 |--------|-------------|
 | `core` | Build the core SKOS vocab (`wikicore-DATE-core-LOCALE.nt`) |
 | `skos_class_qids` | Build one `.nt` per class QID (777 files) |
-| `skos_class_groups` | Build one combined `.nt` per class group (42 files) |
-| `skos_occ_qids` | Build one `.nt` per occupation QID (1,429 files) |
+| `skos_class_groups` | Build one combined `.nt` per class group (43 files) |
+| `skos_occ_qids` | Build one `.nt` per occupation QID (up to 1,449 files) |
 | `skos_occ_groups` | Build one combined `.nt` per occupation group (19 files) |
 | `skos_occ_unmatched` | Build SKOS for Q5 humans with no matched occupation |
 | `skos_class_qid QIDS='Q5 Q532'` | Build SKOS for specific class QIDs |
@@ -116,7 +117,7 @@ make <target> [OPTIONS]
 | Target | Description |
 |--------|-------------|
 | `fulltext_class_qids` | Build one fulltext TSV per class QID (777 files) |
-| `fulltext_class_groups` | Build one combined fulltext TSV per class group (42 files) |
+| `fulltext_class_groups` | Build one combined fulltext TSV per class group (43 files) |
 | `fulltext_occ_groups` | Build one combined fulltext TSV per occupation group (19 files, people) |
 | `fulltext_occ_unmatched` | Build fulltext TSV for Q5 humans with no matched occupation |
 | `fulltext_class_qid QIDS='Q5 Q532'` | Build fulltext TSVs for specific class QIDs |
@@ -157,10 +158,10 @@ sys     166m41.555s
 |--------|------:|----------|-------------|
 | `core` | 1 | `wikicore-DATE/` | Core taxonomy |
 | `skos_class_qids` | 777 | `wikicore-DATE/classes/` | One `.nt` per class QID |
-| `skos_class_groups` | 42 | `wikicore-DATE/classes/groups/` | One `.nt` per class group |
-| `skos_occ_qids` | 1,429 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID |
+| `skos_class_groups` | 43 | `wikicore-DATE/classes/groups/` | One `.nt` per class group |
+| `skos_occ_qids` | up to 1,449 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID |
 | `skos_occ_groups` | 19 | `wikicore-DATE/occupations/groups/` | One `.nt` per occupation group |
-| **TOTAL** | **2,268** | | ~11 GB disk space |
+| **TOTAL** | **up to 2,289** | | ~11 GB disk space |
 
 Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.ttl.gz` after `make turtle`). SKOS triples per concept: `rdf:type skos:Concept`, `skos:inScheme`, `skos:prefLabel`/`skos:altLabel`, and `skos:broader`.
 
@@ -169,9 +170,9 @@ Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.
 | Target | Files | Location |
 |--------|------:|----------|
 | `fulltext_class_qids` | 777 | `wikicore-DATE/fulltext/classes/qids/` |
-| `fulltext_class_groups` | 42 | `wikicore-DATE/fulltext/classes/` |
+| `fulltext_class_groups` | 43 | `wikicore-DATE/fulltext/classes/` |
 | `fulltext_occ_groups` | 20 (19 + unmatched) | `wikicore-DATE/fulltext/occupations/` |
-| **TOTAL** | **839** | ~5 GB disk space |
+| **TOTAL** | **840** | ~5 GB disk space |
 
 ---
 
