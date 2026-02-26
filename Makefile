@@ -325,17 +325,17 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 # -----------------------
 # 4. Extract core concepts using file operations
 # -----------------------
-$(CORE_P279_QIDS): $(CONCEPT_BACKBONE) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
-	rg -F 'P279>' $(CONCEPT_BACKBONE) \
-	  | awk '{print $$1}' \
-	  | LC_ALL=C sort -u \
+$(CORE_P279_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+	LC_ALL=C comm -23 \
+	  <(rg -F 'P279>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u) \
+	  <(rg -F 'P31>'  $(CORE_PROPS_NT)   | awk '{print $$1}' | LC_ALL=C sort -u) \
 	  | LC_ALL=C join - $(SITELINKS_FILE) \
 	  | LC_ALL=C sort -u > $@
 
-$(CORE_P361_QIDS): $(CONCEPT_BACKBONE) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
-	rg -F 'P361>' $(CONCEPT_BACKBONE) \
-	  | awk '{print $$1}' \
-	  | LC_ALL=C sort -u \
+$(CORE_P361_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) $(SITELINKS_FILE) | $(SUBJECTS_DIR)
+	LC_ALL=C comm -23 \
+	  <(rg -F 'P361>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u) \
+	  <(rg -F 'P31>'  $(CORE_PROPS_NT)   | awk '{print $$1}' | LC_ALL=C sort -u) \
 	  | LC_ALL=C join - $(SITELINKS_FILE) \
 	  | LC_ALL=C sort -u > $@
 
