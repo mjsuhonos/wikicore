@@ -187,8 +187,8 @@ Wiki Core is licensed under **GPLv3**. See [LICENSE](https://github.com/mjsuhono
 
 ## References
 
-* [Wikidata5m](https://deepgraphlearning.github.io/project/wikidata5m)
-* [Annif](https://github.com/NatLibFi/Annif/)
+* [Annif: Tool for automated subject indexing and classification](https://github.com/NatLibFi/Annif/)
+* [Wikidata5m: million-scale knowledge graph dataset](https://deepgraphlearning.github.io/project/wikidata5m)
 * [SKOS: Simple Knowledge Organization System](https://www.w3.org/TR/skos-reference/)
 * [LCSH: Library of Congress Subject Headings](https://www.loc.gov/aba/cataloging/subject/)
 * [FAST: Faceted Application of Subject Terminology](https://www.oclc.org/en/fast.html)
