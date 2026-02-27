@@ -25,7 +25,7 @@ Wikidata [10150254] Has Sitelink
 Has Sitelink [895484] P31 No Match
 Has Sitelink [895485] P31 Longtail Classes
 Has Sitelink [3399735] P31 Named Classes
-Has Sitelink [710248] P279-P361 Core Taxonomy
+Has Sitelink [116907] P279-P361 Core Taxonomy
 
 // P31 Longtail Classes: subjects with a labeled P31 type not yet assigned to any named group
 P31 Longtail Classes [895485] Uncategorized
