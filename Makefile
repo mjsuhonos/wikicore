@@ -600,7 +600,7 @@ $(FULLTEXT_CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(FULLTEXT_CLASS_QIDS_FILE) | $(WO
 
 # Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
-$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FULLTEXT_CLASS_QIDS_FILE) | $(FULLTEXT_CLASS_QIDS_DIR)
+$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FULLTEXT_CLASS_QIDS_FILE) $(ALL_CLASS_FILES) | $(FULLTEXT_CLASS_QIDS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py classes \
 	  --map     $(FULLTEXT_CLASS_INSTANCE_MAP) \
 	  --qids    $(FULLTEXT_CLASS_QIDS_FILE) \
@@ -611,7 +611,8 @@ $(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FU
 	@touch $@
 
 # Claim per-class-QID fulltext TSVs as outputs of the split
-$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_SPLIT_DONE) ;
+$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_SPLIT_DONE)
+	@[ -f $@ ] || touch $@
 
 # All class QID fulltext files
 fulltext_class_qids: $(FULLTEXT_CLASS_SPLIT_DONE)

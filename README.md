@@ -138,16 +138,6 @@ make <target> [OPTIONS]
 | `LOCALE` | `en` | Output language |
 | `JOBS` | `nproc` | Parallel jobs |
 
-**Build time:**
-
-On a 60-CPU VPS, `make all -j` takes about 45 minutes and 18GB of memory, with an average load around 1400.
-
-```sh
-real    45m42.715s
-user    2391m20.374s
-sys     166m41.555s
-```
-
 ---
 
 ## Output
