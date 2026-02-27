@@ -101,6 +101,7 @@ SUBJECTS_SORTED       := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE         := $(SUBJECTS_DIR)/.subjects_individually_sorted
 LABELS_SPLIT_DIR      := $(WORK_DIR)/label_splits
 LABELS_SPLIT_DONE     := $(LABELS_SPLIT_DIR)/.labels_split_done
+LABELS_ROUTED_DONE    := $(SKOS_DIR)/.labels_routed_done
 CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
 # Fulltext working files
@@ -199,10 +200,10 @@ $(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED
 # Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
 # The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
 
-skos_class_qids: $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(CLASS_QIDS_DIR)
+skos_class_qids: $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(CLASS_QIDS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED)
+skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED)
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
 	  $(MAKE) -j $(JOBS) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
@@ -212,7 +213,7 @@ skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CO
 skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_GROUP_NTS)
 
-skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_SPLIT_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
+skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
 skos: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
@@ -224,7 +225,7 @@ all: skos fulltext
 # -----------------------
 # Directories
 # -----------------------
-$(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) $(LABELS_SPLIT_DIR) \
+$(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
 $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
@@ -336,8 +337,13 @@ $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 $(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
 	pigz -dc $(SKOS_LABELS_GZ) > $@
 
-$(LABELS_SPLIT_DONE): $(SKOS_LABELS_NT) | $(LABELS_SPLIT_DIR)
-	split -l $$(( ($$(wc -l < $(SKOS_LABELS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(SKOS_LABELS_NT) $(LABELS_SPLIT_DIR)/chunk_
+$(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(CORE_QIDS) $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
+	python3 $(ROOT_DIR)/python/route_labels.py \
+	  --labels   $(SKOS_LABELS_NT) \
+	  --subjects $(SUBJECTS_DIR) \
+	  --out-dir  $(SKOS_DIR) \
+	  --locale   $(LOCALE) \
+	  --sort-workers $(JOBS)
 	@touch $@
 
 # -----------------------
@@ -383,11 +389,7 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$$vocab_uri" \
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $< >> $@
 
-$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: \
-	$(LABELS_SPLIT_DONE) $(SUBJECTS_DIR)/%_subjects.tsv | $(SKOS_DIR)
-	awk 'NR==FNR{core[$$1]=1;next}$$1 in core&&!seen[$$0]++' \
-	  $(SUBJECTS_DIR)/$*_subjects.tsv $(LABELS_SPLIT_DIR)/chunk_* \
-	  | LC_ALL=C sort -u > $@
+$(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: $(LABELS_ROUTED_DONE) ;
 
 $(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
 	LC_ALL=C sort -u --parallel=$(JOBS) $< > $@
