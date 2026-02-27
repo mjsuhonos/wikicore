@@ -34,20 +34,26 @@ from pathlib import Path
 STEM_RE = re.compile(r'^(.+?)(?:_subjects|\.subjects)\.tsv$')
 
 
-def load_reverse_map(subjects_dir: str) -> dict[str, list[str]]:
-    """Build {uri: [stem1, stem2, ...]} from all *_subjects.tsv files."""
+def load_reverse_map(subjects_dir: str) -> tuple[dict[str, list[str]], set[str]]:
+    """Build {uri: [stem1, stem2, ...]} from all *_subjects.tsv files.
+
+    Also returns the full set of stems found, including those from empty files,
+    so that label output files are always created for every subject TSV.
+    """
     reverse: dict[str, list[str]] = defaultdict(list)
+    all_stems: set[str] = set()
     for tsv in sorted(Path(subjects_dir).glob("*.tsv")):
         m = STEM_RE.match(tsv.name)
         if not m:
             continue
         stem = m.group(1)
+        all_stems.add(stem)
         with open(tsv) as f:
             for line in f:
                 uri = line.strip()
                 if uri:
                     reverse[uri].append(stem)
-    return reverse
+    return reverse, all_stems
 
 
 def label_path(out_dir: Path, stem: str, locale: str) -> Path:
@@ -81,8 +87,7 @@ def main() -> None:
 
     # 2. Build reverse map: URI -> [stem names]
     print("Loading subject files...", flush=True)
-    reverse_map = load_reverse_map(args.subjects)
-    all_stems = {s for targets in reverse_map.values() for s in targets}
+    reverse_map, all_stems = load_reverse_map(args.subjects)
     print(f"  {len(reverse_map):,} unique URIs, {len(all_stems)} output files", flush=True)
 
     # 3. Single-pass stream; open output handles lazily on first hit

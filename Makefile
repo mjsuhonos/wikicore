@@ -179,7 +179,7 @@ core: $(FINAL_CORE_NT)
 # Core-only version of Q5 occupation grouping (skips per-QID subject files)
 Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
 
-$(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
+$(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
 	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py --core-only
 	@touch $@
 
@@ -190,7 +190,7 @@ $(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJ
 Q5_OCC_GROUPED_FULL := $(Q5_OCC_GROUPED)
 Q5_OCC_GROUPED := $(Q5_OCC_GROUPED_FULL)
 
-$(Q5_OCC_GROUPED_FULL): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) | $(SUBJECTS_DIR)
+$(Q5_OCC_GROUPED_FULL): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
 	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
 	@touch $@
 
@@ -287,6 +287,7 @@ $(ALL_NAMES_FILE): $(CLASS_NAMES_FILE) $(OCC_NAMES_FILE)
 	cat $^ > $@
 
 $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
+	rm -f $@
 	ls $(SPLIT_DIR)/chunk_* | \
 	  parallel -j $(JOBS) --bar --halt now,fail=1 \
 	    'python3 $(ROOT_DIR)/python/partition_chunks.py {} $(ALL_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
@@ -296,7 +297,13 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 # -----------------------
 
 # Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
-$(SUBJECTS_DONE): $(CONCEPT_BACKBONE)
+# NOTE: $(CORE_QIDS) must be listed here to prevent a race condition under make -j.
+# Both SUBJECTS_DONE and CORE_QIDS depend on CONCEPT_BACKBONE and would run in
+# parallel. CORE_QIDS creates core_subjects.tsv via shell redirection (> $@), which
+# immediately creates an empty file before any data is written. The parallel sort glob
+# (*subjects.tsv) can find that empty file, sort it, and mv-replace it with an empty
+# file — causing CORE_QIDS's output to be written to the now-unlinked old inode.
+$(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(CORE_QIDS)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
 	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
