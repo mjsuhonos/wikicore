@@ -5,10 +5,10 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 .PHONY: all skos fulltext \
-        core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
+        skos_core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
         turtle clean distclean help \
-        fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
+        fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
         fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched
 
 help:
@@ -22,7 +22,7 @@ help:
 	@echo "  fulltext                              Build all fulltext TSVs (require source.nosync/wikidata5m_text.txt.gz)"
 	@echo ""
 	@echo "SKOS targets:"
-	@echo "  core                                  Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
+	@echo "  skos_core                             Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
 	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (777 files)"
 	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (43 files)"
 	@echo "  skos_occ_qids                         Build one .nt per occupation QID (up to 1,449 files, SKOS about Q5 humans)"
@@ -35,6 +35,7 @@ help:
 	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "Fulltext targets:"
+	@echo "  fulltext_core                         Build fulltext TSV for core vocabulary concepts"
 	@echo "  fulltext_class_qids                   Build one fulltext TSV per class QID"
 	@echo "  fulltext_class_groups                 Build one combined fulltext TSV per classes/ TSV"
 	@echo "  fulltext_occ_groups                   Build one combined fulltext TSV per occupations/ TSV (people)"
@@ -106,11 +107,16 @@ CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
 # Fulltext working files
 FULLTEXT_GZ                := $(SOURCE_DIR)/wikidata5m_text.txt.gz
+FULLTEXT_CORE_MAP          := $(WORK_DIR)/fulltext_core_map.tsv
+FULLTEXT_CORE_DONE         := $(WORK_DIR)/.fulltext_core_done
 FULLTEXT_CLASS_QIDS_FILE   := $(WORK_DIR)/fulltext_class_qids.txt
 FULLTEXT_CLASS_INSTANCE_MAP := $(WORK_DIR)/fulltext_class_instance_map.tsv
 FULLTEXT_CLASS_SPLIT_DONE  := $(WORK_DIR)/.fulltext_class_split_done
 FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
 FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
+
+# Fulltext output files
+FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
 
 # -----------------------
 # Core files
@@ -174,7 +180,7 @@ ALL_OCC_WITH_UNMATCHED := $(ALL_OCC_NAMES) unmatched
 ALL_CLASS_QIDS_FULLTEXT   := $(foreach Q,$(ALL_CLASS_QIDS),$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
 ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).tsv)
 
-core: $(FINAL_CORE_NT)
+skos_core: $(FINAL_CORE_NT)
 
 # Core-only version of Q5 occupation grouping (skips per-QID subject files)
 Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
@@ -216,9 +222,9 @@ skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
+skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
 
-fulltext: fulltext_class_qids fulltext_class_groups fulltext_occ_groups
+fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups
 
 all: skos fulltext
 
@@ -227,7 +233,7 @@ all: skos fulltext
 # -----------------------
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
-$(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
+$(FULLTEXT_DIR) $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
 	mkdir -p $@
 
@@ -566,6 +572,31 @@ distclean: clean
 #
 # Output format per line: text<TAB><http://www.wikidata.org/entity/Q###>
 # ===========================================================
+
+# -----------------------
+# Core vocabulary fulltext
+# eg. make fulltext_core
+# -----------------------
+
+# Build core QID → "core" group map from core_subjects.tsv (URI format)
+$(FULLTEXT_CORE_MAP): $(CORE_QIDS) | $(WORK_DIR)
+	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $< \
+	  | awk '{print $$1 "\tcore"}' > $@
+
+# Single pass through fulltext GZ for all core concept QIDs
+$(FULLTEXT_CORE_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CORE_MAP) | $(FULLTEXT_DIR)
+	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
+	  --map     $(FULLTEXT_CORE_MAP) \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE) \
+	  --groups  core
+	@touch $@
+
+$(FULLTEXT_CORE_TSV): $(FULLTEXT_CORE_DONE) ;
+
+fulltext_core: $(FULLTEXT_CORE_TSV)
 
 # -----------------------
 # Class domain fulltext

@@ -80,7 +80,8 @@ def write_lines(routing_map: dict[str, list[str]], gz_path: str,
         targets = routing_map.get(qid)
         if not targets:
             continue
-        out_line = f"{text}\t<http://www.wikidata.org/entity/{qid}>\n"
+        clean = text.replace("\t", " ").rstrip()
+        out_line = f"{clean}\t<http://www.wikidata.org/entity/{qid}>\n"
         for key in targets:
             if key not in handles:
                 handles[key] = open(outfile_path(out_dir, date, key, locale), "w",
