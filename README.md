@@ -72,12 +72,7 @@ The 'classes' and 'occupations' in Wiki Core are not prescriptive, they are just
 
 Wiki Core is built using a GNU Make pipeline. The pipeline extracts SKOS concept vocabularies in N-Triples format and fulltext TSVs, organized by subject class or occupation group.
 
-A complete build (`make all`) generates 2,289 SKOS files and 840 fulltext TSVs:
-- **1 core vocabulary file** (116,907 concepts)
-- **777 individual class QID files** (one per class QID with sitelinked subjects)
-- **43 class group files** (3,906,431 named class subjects with overlap)
-- **up to 1,449 occupation QID files** (Q5 humans, varies by active subjects)
-- **19 occupation group files** (Q5 humans by occupation group)
+A complete build (`make all`) generates SKOS files and fulltext TSVs organized by class and occupation group; see [Output](#output) for file and coverage counts.
 
 The build proceeds through the following stages:
 
@@ -115,11 +110,11 @@ make <target> [OPTIONS]
 
 | Target | Description |
 |--------|-------------|
-| `core` | Build the core SKOS vocab (`wikicore-DATE-core-LOCALE.nt`) |
-| `skos_class_qids` | Build one `.nt` per class QID (777 files) |
-| `skos_class_groups` | Build one combined `.nt` per class group (43 files) |
-| `skos_occ_qids` | Build one `.nt` per occupation QID (up to 1,449 files) |
-| `skos_occ_groups` | Build one combined `.nt` per occupation group (19 files) |
+| `skos_core` | Build the core SKOS vocab (`wikicore-DATE-core-LOCALE.nt`) |
+| `skos_class_qids` | Build one `.nt` per class QID |
+| `skos_class_groups` | Build one combined `.nt` per class group |
+| `skos_occ_qids` | Build one `.nt` per occupation QID |
+| `skos_occ_groups` | Build one combined `.nt` per occupation group |
 | `skos_occ_unmatched` | Build SKOS for Q5 humans with no matched occupation |
 | `skos_class_qid QIDS='Q5 Q532'` | Build SKOS for specific class QIDs |
 | `skos_class_group CLASS_FILE=classes/aircraft.tsv` | Build combined `.nt` for a single class group |
@@ -131,9 +126,10 @@ make <target> [OPTIONS]
 
 | Target | Description |
 |--------|-------------|
-| `fulltext_class_qids` | Build one fulltext TSV per class QID (777 files) |
-| `fulltext_class_groups` | Build one combined fulltext TSV per class group (43 files) |
-| `fulltext_occ_groups` | Build one combined fulltext TSV per occupation group (19 files, people) |
+| `fulltext_core` | Build fulltext TSV for core vocabulary concepts |
+| `fulltext_class_qids` | Build one fulltext TSV per class QID |
+| `fulltext_class_groups` | Build one combined fulltext TSV per class group |
+| `fulltext_occ_groups` | Build one combined fulltext TSV per occupation group (Q5 humans) |
 | `fulltext_occ_unmatched` | Build fulltext TSV for Q5 humans with no matched occupation |
 | `fulltext_class_qid QIDS='Q5 Q532'` | Build fulltext TSVs for specific class QIDs |
 | `fulltext_class_group CLASS_FILE=classes/aircraft.tsv` | Build combined fulltext TSV for a single class group |
@@ -157,27 +153,39 @@ make <target> [OPTIONS]
 
 ## Output
 
-`make skos` output is written to a dated release directory (`wikicore-YYYYMMDD/`):
+`make skos` output is written to a dated, locale-specific release directory (`wikicore-YYYYMMDD-LOCALE/`), ~11 GB total:
 
-| Target | Files | Location | Description |
-|--------|------:|----------|-------------|
-| `core` | 1 | `wikicore-DATE/` | Core taxonomy |
-| `skos_class_qids` | 777 | `wikicore-DATE/classes/` | One `.nt` per class QID |
-| `skos_class_groups` | 43 | `wikicore-DATE/classes/groups/` | One `.nt` per class group |
-| `skos_occ_qids` | up to 1,449 | `wikicore-DATE/occupations/` | One `.nt` per occupation QID |
-| `skos_occ_groups` | 19 | `wikicore-DATE/occupations/groups/` | One `.nt` per occupation group |
-| **TOTAL** | **up to 2,289** | | ~11 GB disk space |
+| Target | Location | Description |
+|--------|----------|-------------|
+| `skos_core` | `wikicore-DATE-LOCALE/` | Core taxonomy |
+| `skos_class_qids` | `wikicore-DATE-LOCALE/classes/` | One `.nt` per class QID |
+| `skos_class_groups` | `wikicore-DATE-LOCALE/classes/groups/` | One `.nt` per class group |
+| `skos_occ_qids` | `wikicore-DATE-LOCALE/occupations/` | One `.nt` per occupation QID |
+| `skos_occ_groups` | `wikicore-DATE-LOCALE/occupations/groups/` | One `.nt` per occupation group |
 
 Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.ttl.gz` after `make turtle`). SKOS triples per concept: `rdf:type skos:Concept`, `skos:inScheme`, `skos:prefLabel`/`skos:altLabel`, and `skos:broader`.
 
-`make fulltext` output is written to `wikicore-DATE/fulltext/`, mirroring the SKOS layout. Each line: `text<TAB><http://www.wikidata.org/entity/QID>`.
+`make fulltext` output is written to `wikicore-DATE-LOCALE/fulltext/`, mirroring the SKOS layout, ~5 GB total. Each line: `text<TAB><http://www.wikidata.org/entity/QID>`.
 
-| Target | Files | Location |
-|--------|------:|----------|
-| `fulltext_class_qids` | 777 | `wikicore-DATE/fulltext/classes/qids/` |
-| `fulltext_class_groups` | 43 | `wikicore-DATE/fulltext/classes/` |
-| `fulltext_occ_groups` | 20 (19 + unmatched) | `wikicore-DATE/fulltext/occupations/` |
-| **TOTAL** | **840** | ~5 GB disk space |
+| Target | Location |
+|--------|----------|
+| `fulltext_core` | `wikicore-DATE-LOCALE/fulltext/` |
+| `fulltext_class_qids` | `wikicore-DATE-LOCALE/fulltext/classes/qids/` |
+| `fulltext_class_groups` | `wikicore-DATE-LOCALE/fulltext/classes/` |
+| `fulltext_occ_groups` | `wikicore-DATE-LOCALE/fulltext/occupations/` |
+
+### QID Coverage
+
+Unique Wikidata QID counts from the `wikicore-20260226-en` build. Individual and group files share the same QID pool within each domain; the global unique total reflects deduplication across all files.
+
+| Component | Files | Unique QIDs |
+|-----------|------:|------------:|
+| Core | 1 | 144,978 |
+| Classes / per-QID files | 820 | 9,101,430 |
+| Classes / group files | 86 | 9,101,430 |
+| Occupations / per-QID files | 1,448 | 1,943,216 |
+| Occupations / group files | 38 | 1,943,216 |
+| **Global unique (all files)** | **2,393** | **9,231,924** |
 
 ---
 
