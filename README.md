@@ -185,8 +185,8 @@ Unique Wikidata QID counts from the `wikicore-20260226-en` build. Individual and
 | Classes / group files | 86 | 9,101,430 | Same QID pool, grouped by subject area |
 | Occupations / per-QID files | 1,448 | 1,943,216 | Q5 humans matched to a known occupation |
 | Occupations / group files | 38 | 1,943,216 | Same QID pool, grouped by occupation area |
-| Occupations / unmatched file | 1 | 172,868 | Q5 humans with no matching occupation group (`make skos_occ_unmatched`) |
-| **Global unique (default build)** | **2,393** | **9,231,924** | Deduplicated across Core + Classes + matched Occupations |
+| Occupations / unmatched file | 1 | 172,868 | Q5 humans with no matching occupation |
+| **Global unique** | **2,393** | **9,231,924** | Deduplicated |
 
 ---
 
