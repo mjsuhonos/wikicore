@@ -1,5 +1,12 @@
 <img src="https://github.com/mjsuhonos/wikicore/blob/main/wikicore_logo_trans.png?raw=true" alt="wikicore" width="200"/>
 
+![test](https://flagcdn.com/w20/de.png)
+![test](https://flagcdn.com/w20/ca.png)
+![test](https://flagcdn.com/w20/es.png)
+![test](https://flagcdn.com/w20/fi.png)
+![test](https://flagcdn.com/w20/fr.png)
+![test](https://flagcdn.com/w20/it.png)
+
 # Wiki Core
 
 Wiki Core is a modern, open approach to subject organization. By anchoring topics in stable identifiers from Wikidata instead of pre-coordinated strings, it separates meaning from syntax, supports multilingual labels, and enables flexible, faceted discovery.
