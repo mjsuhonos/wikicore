@@ -45,6 +45,20 @@ Subject coverage is drawn from Wikidata items with English-language sitelinks, o
 
 ![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
 
+### QID Coverage
+
+Unique Wikidata QID counts from the `wikicore-20260226-en` build. Individual and group files share the same QID pool within each domain; the global unique total reflects deduplication across all files.
+
+| Component | Files | Unique QIDs | Notes |
+|-----------|------:|------------:|-------|
+| Core | 1 | 144,978 | Pure concepts (no P31 instances) |
+| Classes / per-QID files | 820 | 9,101,430 | P31 instances of each class QID |
+| Classes / group files | 86 | 9,101,430 | Same QID pool, grouped by subject area |
+| Occupations / per-QID files | 1,448 | 1,943,216 | Q5 humans matched to a known occupation |
+| Occupations / group files | 38 | 1,943,216 | Same QID pool, grouped by occupation area |
+| Occupations / unmatched file | 1 | 172,868 | Q5 humans with no matching occupation |
+| **Global unique** | **2,393** | **9,231,924** | Deduplicated |
+
 ### Subject Distribution
 
 Occupation SKOS files contain statements about Q5 (human) entities, not about occupation concepts themselves. For example, `wikicore-DATE-occ-engineering-en.nt` contains SKOS about individual engineers (Ada Lovelace, etc.), not about the occupation concept "engineer" (Q81096). Class SKOS files contain statements about class concepts and their instances. Items may appear in multiple groups.
@@ -173,20 +187,6 @@ Each file is named `wikicore-YYYYMMDD-<class|QID|group-name>-<locale>.nt` (or `.
 | `fulltext_class_qids` | `wikicore-DATE-LOCALE/fulltext/classes/qids/` |
 | `fulltext_class_groups` | `wikicore-DATE-LOCALE/fulltext/classes/` |
 | `fulltext_occ_groups` | `wikicore-DATE-LOCALE/fulltext/occupations/` |
-
-### QID Coverage
-
-Unique Wikidata QID counts from the `wikicore-20260226-en` build. Individual and group files share the same QID pool within each domain; the global unique total reflects deduplication across all files.
-
-| Component | Files | Unique QIDs | Notes |
-|-----------|------:|------------:|-------|
-| Core | 1 | 144,978 | Pure concepts (no P31 instances) |
-| Classes / per-QID files | 820 | 9,101,430 | P31 instances of each class QID |
-| Classes / group files | 86 | 9,101,430 | Same QID pool, grouped by subject area |
-| Occupations / per-QID files | 1,448 | 1,943,216 | Q5 humans matched to a known occupation |
-| Occupations / group files | 38 | 1,943,216 | Same QID pool, grouped by occupation area |
-| Occupations / unmatched file | 1 | 172,868 | Q5 humans with no matching occupation |
-| **Global unique** | **2,393** | **9,231,924** | Deduplicated |
 
 ---
 
