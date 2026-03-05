@@ -73,10 +73,10 @@ ALL_NAMES_FILE   := $(WORK_DIR)/all_names.tsv
 
 # Output directories (dated release layout)
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
-CLASS_QIDS_DIR   := $(OUT_DIR)/classes
-CLASS_GROUPS_DIR := $(OUT_DIR)/classes/groups
-OCC_QIDS_DIR     := $(OUT_DIR)/occupations
-OCC_GROUPS_DIR   := $(OUT_DIR)/occupations/groups
+CLASS_QIDS_DIR   := $(OUT_DIR)/classes/qids
+CLASS_GROUPS_DIR := $(OUT_DIR)/classes
+OCC_QIDS_DIR     := $(OUT_DIR)/occupations/qids
+OCC_GROUPS_DIR   := $(OUT_DIR)/occupations
 
 # Fulltext output directories
 FULLTEXT_DIR              := $(OUT_DIR)/fulltext
@@ -537,7 +537,6 @@ endif
 # Convert .nt files to compressed Turtle
 # -----------------------
 TURTLE_GZS := $(FINAL_CORE_NT:.nt=.ttl.gz) \
-              $(ALL_CLASS_QIDS_NTS:.nt=.ttl.gz) \
               $(ALL_CLASS_GROUP_NTS:.nt=.ttl.gz) \
               $(ALL_OCC_GROUP_NTS:.nt=.ttl.gz)
 
@@ -550,9 +549,6 @@ PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
-	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
-	  $(MAKE) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).ttl.gz); \
-	fi
 
 # -----------------------
 # Clean
