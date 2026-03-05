@@ -7,7 +7,7 @@ SHELL := /bin/bash
 .PHONY: all skos fulltext \
         skos_core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
-        turtle clean distclean help \
+        turtle clean help \
         fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
         fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched \
         fulltext_occ_qids fulltext_occ_qid
@@ -49,7 +49,6 @@ help:
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  clean                                 Remove working files"
-	@echo "  distclean                             Remove working files and all generated .nt/.ttl.gz"
 	@echo ""
 	@echo "Options:"
 	@echo "  LOCALE=<lang>   Output language (default: en)"
@@ -91,8 +90,7 @@ FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations/qids
 # -----------------------
 # Inputs
 # -----------------------
-PROP_DIRECT_GZ   := $(SOURCE_DIR)/wikidata-20251229-propdirect.nt.gz
-SKOS_LABELS_GZ   := $(SOURCE_DIR)/wikidata-20251229-skos-labels-$(LOCALE).nt.gz
+CLEANED_GZ       := $(SOURCE_DIR)/wikidata-20251229-cleaned.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 
 # -----------------------
@@ -209,6 +207,9 @@ $(Q5_OCC_GROUPED_FULL): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJEC
 # Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED_FULL
 $(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED_FULL) ;
 
+# active_occ_qids.txt is also written as a side effect of group_q5_by_occupation.py
+$(ACTIVE_OCC_QIDS_FILE): $(Q5_OCC_GROUPED_FULL) ;
+
 # Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
 # The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
 
@@ -254,8 +255,8 @@ $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
 # -----------------------
 CORE_EXTRACT_DONE := $(WORK_DIR)/.core_extract_done
 
-$(CORE_EXTRACT_DONE): $(PROP_DIRECT_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
-	pigz -dc $(PROP_DIRECT_GZ) \
+$(CORE_EXTRACT_DONE): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
+	pigz -dc $(CLEANED_GZ) \
 	  | tee \
 	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
 	        | rg -F -v '_:' \
@@ -353,8 +354,8 @@ $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 # -----------------------
 # 6. Extract and split localized labels
 # -----------------------
-$(SKOS_LABELS_NT): $(SKOS_LABELS_GZ) | $(WORK_DIR)
-	pigz -dc $(SKOS_LABELS_GZ) > $@
+$(SKOS_LABELS_NT): $(CLEANED_GZ) | $(WORK_DIR)
+	pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@
 
 $(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(CORE_QIDS) $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
 	python3 $(ROOT_DIR)/python/route_labels.py \
@@ -561,9 +562,6 @@ turtle: $(TURTLE_GZS)
 # -----------------------
 clean:
 	rm -rf $(WORK_DIR)
-
-distclean: clean
-	rm -rf $(OUT_DIR) $(FULLTEXT_DIR)
 
 # ===========================================================
 # Fulltext TSV generation from wikidata5m_text.txt.gz
