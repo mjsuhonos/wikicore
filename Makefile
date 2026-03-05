@@ -9,7 +9,8 @@ SHELL := /bin/bash
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
         turtle clean distclean help \
         fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
-        fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched
+        fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched \
+        fulltext_occ_qids fulltext_occ_qid
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -42,6 +43,8 @@ help:
 	@echo "  fulltext_class_qid QIDS='...'         Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
 	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
 	@echo "  fulltext_occ_group OCC_FILE=<path>    Build combined fulltext TSV for a single occupations/ TSV"
+	@echo "  fulltext_occ_qids                     Build one fulltext TSV per occupation QID (people)"
+	@echo "  fulltext_occ_qid QIDS='...'           Build fulltext TSVs for specific occupation QIDs (eg. 'Q33999')"
 	@echo "  fulltext_occ_unmatched                Build fulltext TSV for Q5 humans with no matched occupation"
 	@echo ""
 	@echo "Utility targets:"
@@ -83,6 +86,7 @@ FULLTEXT_DIR              := $(OUT_DIR)/fulltext
 FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
 FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
 FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
+FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations/qids
 
 # -----------------------
 # Inputs
@@ -114,6 +118,8 @@ FULLTEXT_CLASS_INSTANCE_MAP := $(WORK_DIR)/fulltext_class_instance_map.tsv
 FULLTEXT_CLASS_SPLIT_DONE  := $(WORK_DIR)/.fulltext_class_split_done
 FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
 FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
+FULLTEXT_OCC_QID_MAP      := $(WORK_DIR)/fulltext_occ_qid_map.tsv
+FULLTEXT_OCC_QIDS_DONE    := $(WORK_DIR)/.fulltext_occ_qids_done
 
 # Fulltext output files
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
@@ -224,7 +230,7 @@ skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $
 
 skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
 
-fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups
+fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids
 
 all: skos fulltext
 
@@ -234,7 +240,7 @@ all: skos fulltext
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
 $(FULLTEXT_DIR) $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
-$(FULLTEXT_OCC_GROUPS_DIR):
+$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -727,3 +733,42 @@ endif
 FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).tsv
 
 fulltext_occ_unmatched: $(FULLTEXT_OCC_UNMATCHED_TSV)
+
+# -----------------------
+# Per-occupation-QID fulltext TSVs
+# One TSV per active occupation QID, analogous to fulltext/classes/qids/
+# -----------------------
+
+# Build human-QID → occupation-QID mapping from per-QID subject files
+$(FULLTEXT_OCC_QID_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
+	@echo "Building occupation QID fulltext map..."
+	@while IFS= read -r qid; do \
+	    f="$(SUBJECTS_DIR)/$${qid}_subjects.tsv"; \
+	    [ -f "$$f" ] && \
+	      sed 's|<http://www.wikidata.org/entity/||;s|>||g' "$$f" \
+	        | awk -v q="$$qid" '{print $$1 "\t" q}'; \
+	done < $(ACTIVE_OCC_QIDS_FILE) | LC_ALL=C sort -u > $@
+
+# Single pass through fulltext GZ: one TSV per occupation QID.
+$(FULLTEXT_OCC_QIDS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_QID_MAP) $(ACTIVE_OCC_QIDS_FILE) | $(FULLTEXT_OCC_QIDS_DIR)
+	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
+	  --map     $(FULLTEXT_OCC_QID_MAP) \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_OCC_QIDS_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE) \
+	  --groups  $(shell cat $(ACTIVE_OCC_QIDS_FILE))
+	@touch $@
+
+# Claim per-occ-QID fulltext TSVs as outputs of the split
+$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_QIDS_DONE) ;
+
+# All occupation QID fulltext files
+fulltext_occ_qids: $(FULLTEXT_OCC_QIDS_DONE)
+
+# Specific occupation QID(s): make fulltext_occ_qid QIDS='Q33999 Q10800557'
+OCC_QID_FULLTEXT_OUTS := $(foreach Q,$(QIDS),\
+  $(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
+
+fulltext_occ_qid: $(OCC_QID_FULLTEXT_OUTS)
+
