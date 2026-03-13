@@ -54,17 +54,17 @@ Subject coverage is drawn from Wikidata items with English-language sitelinks, o
 
 ### QID Coverage
 
-Unique Wikidata QID counts from the `wikicore-20260226-en` build. Individual and group files share the same QID pool within each domain; the global unique total reflects deduplication across all files.
+Unique Wikidata QID counts from the `wikicore-20260312-en` build. Individual and group files share the same QID pool within each domain; the global unique total reflects deduplication across all files.
 
 | Component | Files | Unique QIDs | Notes |
 |-----------|------:|------------:|-------|
 | Core | 1 | 144,978 | Pure concepts (no P31 instances) |
-| Classes / per-QID files | 820 | 9,101,430 | P31 instances of each class QID |
-| Classes / group files | 86 | 9,101,430 | Same QID pool, grouped by subject area |
-| Occupations / per-QID files | 1,448 | 1,943,216 | Q5 humans matched to a known occupation |
-| Occupations / group files | 38 | 1,943,216 | Same QID pool, grouped by occupation area |
+| Classes / per-QID files | 777 | 9,101,430 | P31 instances of each class QID |
+| Classes / group files | 43 | 9,101,430 | Same QID pool, grouped by subject area |
+| Occupations / per-QID files | 1,429 | 1,943,216 | Q5 humans matched to a known occupation |
+| Occupations / group files | 19 | 1,943,216 | Same QID pool, grouped by occupation area |
 | Occupations / unmatched file | 1 | 172,868 | Q5 humans with no matching occupation |
-| **Global unique** | **2,393** | **9,231,924** | Deduplicated |
+| **Global unique** | **2,276** | **9,231,924** | Deduplicated |
 
 ### Subject Distribution
 
