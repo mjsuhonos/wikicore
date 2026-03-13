@@ -10,7 +10,9 @@ SHELL := /bin/bash
         turtle clean help \
         fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
         fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched \
-        fulltext_occ_qids fulltext_occ_qid
+        fulltext_occ_qids fulltext_occ_qid \
+        skos_P31_other fulltext_P31_other \
+        annif_projects
 
 help:
 	@echo "Wiki Core processing pipeline"
@@ -19,7 +21,7 @@ help:
 	@echo ""
 	@echo "Aggregate targets:"
 	@echo "  all                                   Build everything: skos + fulltext"
-	@echo "  skos                                  Build all SKOS .nt files (core + class_qids/groups + occ_qids/groups)"
+	@echo "  skos                                  Build all SKOS .nt files (core + class_qids/groups + occ_qids/groups + unmatched + P31_other)"
 	@echo "  fulltext                              Build all fulltext TSVs (require source.nosync/wikidata5m_text.txt.gz)"
 	@echo ""
 	@echo "SKOS targets:"
@@ -33,6 +35,7 @@ help:
 	@echo "  skos_occ_qid QID=<QID>                Build SKOS for Q5 humans with a specific occupation QID"
 	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
 	@echo "  skos_occ_unmatched                    Build SKOS for Q5 humans with no matched occupation"
+	@echo "  skos_P31_other                        Build SKOS for entities with unrecognized P31 values"
 	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "Fulltext targets:"
@@ -46,6 +49,10 @@ help:
 	@echo "  fulltext_occ_qids                     Build one fulltext TSV per occupation QID (people)"
 	@echo "  fulltext_occ_qid QIDS='...'           Build fulltext TSVs for specific occupation QIDs (eg. 'Q33999')"
 	@echo "  fulltext_occ_unmatched                Build fulltext TSV for Q5 humans with no matched occupation"
+	@echo "  fulltext_P31_other                    Build fulltext TSV for entities with unrecognized P31 values"
+	@echo ""
+	@echo "Annif targets:"
+	@echo "  annif_projects                        Generate Annif project .cfg files into annif/"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  clean                                 Remove working files"
@@ -79,6 +86,7 @@ CLASS_QIDS_DIR   := $(OUT_DIR)/classes/qids
 CLASS_GROUPS_DIR := $(OUT_DIR)/classes
 OCC_QIDS_DIR     := $(OUT_DIR)/occupations/qids
 OCC_GROUPS_DIR   := $(OUT_DIR)/occupations
+SUBJECTS_OUT_DIR := $(OUT_DIR)/subjects
 
 # Fulltext output directories
 FULLTEXT_DIR              := $(OUT_DIR)/fulltext
@@ -86,6 +94,7 @@ FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
 FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
 FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations/qids
+FULLTEXT_SUBJECTS_DIR     := $(FULLTEXT_DIR)/subjects
 
 # -----------------------
 # Inputs
@@ -118,9 +127,12 @@ FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
 FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
 FULLTEXT_OCC_QID_MAP      := $(WORK_DIR)/fulltext_occ_qid_map.tsv
 FULLTEXT_OCC_QIDS_DONE    := $(WORK_DIR)/.fulltext_occ_qids_done
+FULLTEXT_P31_OTHER_MAP    := $(WORK_DIR)/fulltext_p31_other_map.tsv
+FULLTEXT_P31_OTHER_DONE   := $(WORK_DIR)/.fulltext_p31_other_done
 
 # Fulltext output files
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
+FULLTEXT_P31_OTHER_TSV     := $(FULLTEXT_SUBJECTS_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).tsv
 
 # -----------------------
 # Core files
@@ -229,9 +241,12 @@ skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups
+skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched
 
-fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids
+# Build P31_other SKOS after all subjects are processed
+skos: skos_P31_other
+
+fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
 
 all: skos fulltext
 
@@ -240,8 +255,9 @@ all: skos fulltext
 # -----------------------
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
+$(SUBJECTS_OUT_DIR) \
 $(FULLTEXT_DIR) $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
-$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
+$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR) $(FULLTEXT_SUBJECTS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -504,7 +520,8 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 # eg. make skos_occ_unmatched
 # -----------------------
 
-UNMATCHED_OCC_NT := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
+UNMATCHED_OCC_NT    := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
+FINAL_P31_OTHER_NT  := $(SUBJECTS_OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
 
 # Claim Q5_unmatched_subjects.tsv as output of both core and full versions
 $(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED_CORE) $(Q5_OCC_GROUPED_FULL) ;
@@ -522,6 +539,38 @@ $(UNMATCHED_OCC_NT): \
 	    $(SKOS_DIR)/skos_Q5_unmatched_labels_$(LOCALE).nt \
 	    $(SKOS_DIR)/skos_Q5_unmatched_broader.nt \
 	    > $@
+	@echo "Generated $@"
+
+# -----------------------
+# 9c. Generate SKOS for P31_other (entities with unrecognized P31 values)
+# eg. make skos_P31_other
+# -----------------------
+
+skos_P31_other: $(FINAL_P31_OTHER_NT)
+
+# Explicit rules for P31_other SKOS files to ensure SUBJECTS_DONE completes first
+$(SKOS_DIR)/skos_P31_other_concepts.nt: $(SUBJECTS_DONE) | $(SKOS_DIR)
+	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
+	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $(SUBJECTS_DIR)/P31_other.subjects.tsv > $@
+
+$(SKOS_DIR)/skos_P31_other_concept_scheme.nt: $(SUBJECTS_DONE) | $(SKOS_DIR)
+	@vocab_uri="$(VOCAB_URI)/subjects/other"; \
+	echo "<$$vocab_uri> <$(RDF_TYPE_URI)> <$(SKOS_CONCEPT_SCHEME_URI)> ." > $@; \
+	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$$vocab_uri" \
+	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $(SUBJECTS_DIR)/P31_other.subjects.tsv >> $@
+
+$(SKOS_DIR)/skos_P31_other_broader.nt: $(SUBJECTS_DONE) $(CONCEPT_BACKBONE_SORTED) | $(SKOS_DIR)
+	LC_ALL=C join $(SUBJECTS_DIR)/P31_other.subjects.tsv $(CONCEPT_BACKBONE_SORTED) \
+	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
+	  > $@
+
+$(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) \
+    $(SKOS_DIR)/skos_P31_other_concepts.nt \
+    $(SKOS_DIR)/skos_P31_other_concept_scheme.nt \
+    $(SKOS_DIR)/skos_P31_other_labels_$(LOCALE).nt \
+    $(SKOS_DIR)/skos_P31_other_broader.nt | $(SUBJECTS_OUT_DIR)
+	cat $^ > $@
+	@echo "Generated $@"
 	@echo "Generated $@"
 
 # -----------------------
@@ -545,7 +594,8 @@ endif
 # -----------------------
 TURTLE_GZS := $(FINAL_CORE_NT:.nt=.ttl.gz) \
               $(ALL_CLASS_GROUP_NTS:.nt=.ttl.gz) \
-              $(ALL_OCC_GROUP_NTS:.nt=.ttl.gz)
+              $(ALL_OCC_GROUP_NTS:.nt=.ttl.gz) \
+              $(FINAL_P31_OTHER_NT:.nt=.ttl.gz)
 
 PREFIXES_TTL := $(ROOT_DIR)/prefixes.ttl
 
@@ -733,6 +783,30 @@ FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-un
 fulltext_occ_unmatched: $(FULLTEXT_OCC_UNMATCHED_TSV)
 
 # -----------------------
+# P31_other fulltext
+# eg. make fulltext_P31_other
+# -----------------------
+
+# Build QID → "other" map from P31_other.subjects.tsv
+$(FULLTEXT_P31_OTHER_MAP): $(SUBJECTS_DONE) | $(WORK_DIR)
+	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $(SUBJECTS_DIR)/P31_other.subjects.tsv \
+	  | awk '{print $$1 "\tother"}' > $@
+
+$(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP) | $(FULLTEXT_SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
+	  --map     $(FULLTEXT_P31_OTHER_MAP) \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_SUBJECTS_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE) \
+	  --groups  other
+	@touch $@
+
+$(FULLTEXT_P31_OTHER_TSV): $(FULLTEXT_P31_OTHER_DONE) ;
+
+fulltext_P31_other: $(FULLTEXT_P31_OTHER_TSV)
+
+# -----------------------
 # Per-occupation-QID fulltext TSVs
 # One TSV per active occupation QID, analogous to fulltext/classes/qids/
 # -----------------------
@@ -769,4 +843,20 @@ OCC_QID_FULLTEXT_OUTS := $(foreach Q,$(QIDS),\
   $(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
 
 fulltext_occ_qid: $(OCC_QID_FULLTEXT_OUTS)
+
+# -----------------------
+# Annif project files
+# -----------------------
+ANNIF_DIR := $(ROOT_DIR)/annif
+
+annif_projects: | $(ANNIF_DIR)
+	python3 $(ROOT_DIR)/python/generate_annif_projects.py \
+	  --date $(RUN_DATE) \
+	  --lang $(LOCALE) \
+	  --classes-dir $(ROOT_DIR)/classes \
+	  --occs-dir $(ROOT_DIR)/occupations \
+	  --outdir $(ANNIF_DIR)
+
+$(ANNIF_DIR):
+	mkdir -p $@
 
