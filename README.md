@@ -50,7 +50,7 @@ Wiki Core is currently maintained by a single developer, but the explicit intent
 
 Subject coverage is drawn from Wikidata items with English-language sitelinks, organized into two main tracks: **named classes** (things) and **humans** (people by occupation).
 
-![Coverage Sankey Diagram](https://github.com/mjsuhonos/wikicore/blob/main/wikicore-sankey.png?raw=true)
+![Coverage Sankey Diagram](https://raw.githubusercontent.com/mjsuhonos/wikicore/refs/heads/main/wikicore-sankey.png)
 
 ### QID Coverage
 
