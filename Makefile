@@ -86,7 +86,7 @@ CLASS_QIDS_DIR   := $(OUT_DIR)/classes/qids
 CLASS_GROUPS_DIR := $(OUT_DIR)/classes
 OCC_QIDS_DIR     := $(OUT_DIR)/occupations/qids
 OCC_GROUPS_DIR   := $(OUT_DIR)/occupations
-SUBJECTS_OUT_DIR := $(OUT_DIR)/subjects
+
 
 # Fulltext output directories
 FULLTEXT_DIR              := $(OUT_DIR)/fulltext
@@ -94,7 +94,7 @@ FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
 FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
 FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations/qids
-FULLTEXT_SUBJECTS_DIR     := $(FULLTEXT_DIR)/subjects
+
 
 # -----------------------
 # Inputs
@@ -130,14 +130,14 @@ FULLTEXT_P31_OTHER_DONE   := $(WORK_DIR)/.fulltext_p31_other_done
 
 # Fulltext output files
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
-FULLTEXT_P31_OTHER_TSV     := $(FULLTEXT_SUBJECTS_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).tsv
+FULLTEXT_P31_OTHER_TSV     := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).tsv
 
 # -----------------------
 # Core files
 # -----------------------
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
-CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-properties.nt
-SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
+CORE_PROPS_NT       := $(SOURCE_DIR)/wikidata-core-properties.nt
+SKOS_LABELS_NT      := $(SOURCE_DIR)/wikidata-skos-labels-$(LOCALE).nt
 CORE_QIDS           := $(SUBJECTS_DIR)/core_subjects.tsv
 
 # -----------------------
@@ -247,9 +247,8 @@ all: skos fulltext
 # -----------------------
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
-$(SUBJECTS_OUT_DIR) \
 $(FULLTEXT_DIR) $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
-$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR) $(FULLTEXT_SUBJECTS_DIR):
+$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -264,13 +263,15 @@ $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
 
 # Direct rule for core properties extraction (includes P106)
 # This replaces the CORE_EXTRACT_DONE sentinel with direct file dependencies
-$(CORE_PROPS_NT): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
-	pigz -dc -p 4 $(CLEANED_GZ) \
-	  | rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' \
-	  | rg -F -v '_:' \
-	  | awk -v sf=$(SITELINKS_FILE) \
-	      'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
-	  > $@; wait
+$(CORE_PROPS_NT): 
+	@if [ ! -f $@ ]; then \
+	  pigz -dc -p 4 $(CLEANED_GZ) \
+	    | rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' \
+	    | rg -F -v '_:' \
+	    | awk -v sf=$(SITELINKS_FILE) \
+	        'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+	    > $@; \
+	fi
 
 # Extract Q5 (human) subjects with sitelinks from core props
 $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
@@ -343,8 +344,10 @@ $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 # -----------------------
 # 6. Extract and split localized labels
 # -----------------------
-$(SKOS_LABELS_NT): $(CLEANED_GZ) | $(WORK_DIR)
-	pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@
+$(SKOS_LABELS_NT): 
+	@if [ ! -f $@ ]; then \
+	  pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@; \
+	fi
 
 $(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(CORE_QIDS) $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
 	python3 $(ROOT_DIR)/python/route_labels.py \
@@ -494,7 +497,7 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 # -----------------------
 
 UNMATCHED_OCC_NT    := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
-FINAL_P31_OTHER_NT  := $(SUBJECTS_OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
+FINAL_P31_OTHER_NT  := $(OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
 
 # Claim Q5_unmatched_subjects.tsv as output of both core and full versions
 $(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED_CORE) $(Q5_OCC_GROUPED_FULL) ;
@@ -541,7 +544,7 @@ $(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE
     $(SKOS_DIR)/skos_P31_other_concepts.nt \
     $(SKOS_DIR)/skos_P31_other_concept_scheme.nt \
     $(SKOS_DIR)/skos_P31_other_labels_$(LOCALE).nt \
-    $(SKOS_DIR)/skos_P31_other_broader.nt | $(SUBJECTS_OUT_DIR)
+    $(SKOS_DIR)/skos_P31_other_broader.nt
 	cat $^ > $@
 	@echo "Generated $@"
 	@echo "Generated $@"
@@ -579,6 +582,11 @@ PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 	@echo "Generated $@"
 
 turtle: $(TURTLE_GZS)
+
+# -----------------------
+# Extract initial .nt files
+# -----------------------
+extract: $(CORE_PROPS_NT) $(SKOS_LABELS_NT)
 
 # -----------------------
 # Clean
@@ -765,11 +773,11 @@ $(FULLTEXT_P31_OTHER_MAP): $(SUBJECTS_DONE) | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $(SUBJECTS_DIR)/P31_other.subjects.tsv \
 	  | awk '{print $$1 "\tother"}' > $@
 
-$(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP) | $(FULLTEXT_SUBJECTS_DIR)
+$(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
 	  --map     $(FULLTEXT_P31_OTHER_MAP) \
 	  --gz      $(FULLTEXT_GZ) \
-	  --out-dir $(FULLTEXT_SUBJECTS_DIR) \
+	  --out-dir $(FULLTEXT_DIR) \
 	  --date    $(RUN_DATE) \
 	  --locale  $(LOCALE) \
 	  --groups  other
