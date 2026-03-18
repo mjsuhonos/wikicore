@@ -24,18 +24,24 @@
       padding: 0;
     }
 
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont,
-                   "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-    }
+  body {
+    background-image: url('wikicore-back.jpg');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    margin: 0;
+    padding: 0;
+
+    font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                 "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+
+  }
 
     .container {
       max-width: 1100px;
       margin: 0 auto;
-      padding: 4rem 1.5rem;
+      padding: 2rem 1.5rem;
     }
 
     /* Header / Hero */
@@ -47,7 +53,6 @@
     .logo {
       width: 140px;
       height: auto;
-      margin-bottom: 1.5rem;
     }
 
     h1 {
@@ -132,6 +137,7 @@
     display: inline-flex;
     align-items: center;
     transition: background-color 0.2s, color 0.2s;
+    background-color: #eee;
   }
 
   .github-link:hover {
@@ -145,34 +151,105 @@
       font-size: 0.85rem;
       color: var(--muted);
     }
-  </style>
+
+
+	  .features {
+	    max-width: 800px;
+	    margin: 0 auto;
+	    padding: 2rem;
+	    text-align: center;
+	    color: #333;
+	  }
+
+	  .features h2 {
+	    font-size: 2rem;
+	    margin-bottom: 1rem;
+	    color: #222;
+	  }
+
+	  .features p {
+	    font-size: 1.1rem;
+	    line-height: 1.6;
+	    margin-bottom: 2rem;
+	  }
+
+	  .stats {
+	    display: flex;
+	    justify-content: space-around;
+	    margin: 2rem auto;
+	    flex-wrap: wrap;
+		max-width: 720px;
+	  }
+
+	  .stat {
+	    padding: 1rem;
+	    min-width: 120px;
+	  }
+
+	  .stat-number {
+	    font-size: 2.5rem;
+	    font-weight: bold;
+	    color: #0077b6;
+	    margin-bottom: 0.5rem;
+	  }
+
+	  .stat div:last-child {
+	    font-size: 1rem;
+	    color: #666;
+	  }
+	  .header-container {
+	    display: flex;
+	    align-items: center;
+	    gap: 20px;
+		max-width: 720px;
+		margin: auto;
+	  }
+	  .header-container a {
+  		max-width: 200px;
+		margin: auto;
+	  }
+	  .logo {
+	    height: auto;
+	    max-width: 100%;
+	  }
+	  
+	</style>
+
+
 </head>
 
 <body>
   <main class="container">
     <header class="header">
-      <!-- Replace src with the actual path to your logo file -->
-      <img src="wikicore_logo_trans.png" alt="Wiki Core logo" class="logo" />
+		<div class="header-container">
+	        <img src="wikicore_logo_trans.png" alt="Wiki Core logo" class="logo" />
+	        <h1>Wiki Core</h1>
 
-      <h1>Wiki Core</h1>
+			  <a href="https://github.com/mjsuhonos/wikicore" target="_blank" class="github-link">
+			    <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" 
+			         alt="GitHub" style="width:20px; height:20px; vertical-align:middle; margin-right:6px;">
+			    View on GitHub
+			  </a>
+		</div>
 
-      <p class="tagline">
-        Wiki Core is an open-source controlled vocabulary built from Wikidata,
-        designed to provide a shared, extensible semantic backbone for
-        classification, indexing, and discovery.
-      </p>
+	    <div class="stats feature-card">
+	      <div class="stat">
+	        <div class="stat-number">9.2M+</div>
+	        <div>Unique QIDs</div>
+	      </div>
+	      <div class="stat">
+	        <div class="stat-number">144K+</div>
+	        <div>Core Terms</div>
+	      </div>
+	      <div class="stat">
+	        <div class="stat-number">2.2K+</div>
+	        <div>Classes Generated</div>
+	      </div>
+	    </div>
+
+	    <p class="tagline feature-card">Wiki Core is a modern, open system for organizing subjects. It uses Wikidata identifiers to separate meaning from syntax, supports multiple languages, and enables semantic search, API integration, and flexible data linking. It is designed for developers as a machine-readable vocabulary for applications.</p>
     </header>
 	
-	<!-- GitHub link below opening text, subtle badge style -->
-	<div style="text-align:center;">
-	  <a href="https://github.com/mjsuhonos/wikicore" target="_blank" class="github-link">
-	    <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" 
-	         alt="GitHub" style="width:20px; height:20px; vertical-align:middle; margin-right:6px;">
-	    View on GitHub
-	  </a>
-	</div>
-	
-
     <section class="features">
 
       <div class="feature-grid">
@@ -242,16 +319,6 @@
         </div>
       </div>
     </section>
-
-    <footer>
-      Made with love in Canada
-	  <img
-	    src="https://flagcdn.com/w20/ca.png"
-	    srcset="https://flagcdn.com/w40/ca.png 2x"
-	    width="20"
-	    height="10"
-	    alt="Canada">
-    </footer>
   </main>
 </body>
 </html>
