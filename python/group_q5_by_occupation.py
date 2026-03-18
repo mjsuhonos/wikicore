@@ -17,10 +17,12 @@ from collections import defaultdict
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--core-only', action='store_true',
                     help='Only create files needed for core processing (skip per-QID subject files)')
+parser.add_argument('nt_file', nargs='?', default="working.nosync/wikidata-P106-sitelinks.nt",
+                    help='NT file to process (default: working.nosync/wikidata-P106-sitelinks.nt)')
 args = parser.parse_args()
 
 OCCUPATIONS_DIR = "occupations"
-NT_FILE = "working.nosync/wikidata-P106-sitelinks.nt"
+NT_FILE = args.nt_file
 SUBJECTS_FILE = "working.nosync/subjects/Q5_subjects.tsv"
 OUTPUT_DIR = "working.nosync/subjects"
 

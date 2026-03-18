@@ -136,7 +136,7 @@ FULLTEXT_P31_OTHER_TSV     := $(FULLTEXT_SUBJECTS_DIR)/wikicore-$(RUN_DATE)-othe
 # Core files
 # -----------------------
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
-CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-props-P31-P279-P361.nt
+CORE_PROPS_NT       := $(WORK_DIR)/wikidata-core-properties.nt
 SKOS_LABELS_NT      := $(WORK_DIR)/wikidata-skos-labels-$(LOCALE).nt
 CORE_QIDS           := $(SUBJECTS_DIR)/core_subjects.tsv
 
@@ -145,7 +145,6 @@ CORE_QIDS           := $(SUBJECTS_DIR)/core_subjects.tsv
 # -----------------------
 Q5_SUBJECTS_FILE     := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED       := $(SUBJECTS_DIR)/.q5_occupation_grouped
-P106_NT              := $(WORK_DIR)/wikidata-P106-sitelinks.nt
 OCC_QIDS_FILE        := $(WORK_DIR)/occ_qids.txt
 ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
@@ -195,8 +194,8 @@ skos_core: $(FINAL_CORE_NT)
 # Core-only version of Q5 occupation grouping (skips per-QID subject files)
 Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
 
-$(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
-	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py --core-only
+$(Q5_OCC_GROUPED_CORE): $(CORE_PROPS_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py --core-only <(rg -F '/prop/direct/P106>' $(CORE_PROPS_NT))
 	@touch $@
 
 # Q5_unmatched_subjects.tsv is claimed as output below (after both core and full versions are defined)
@@ -205,8 +204,8 @@ $(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJEC
 Q5_OCC_GROUPED_FULL := $(Q5_OCC_GROUPED)
 Q5_OCC_GROUPED := $(Q5_OCC_GROUPED_FULL)
 
-$(Q5_OCC_GROUPED_FULL): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
-	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py
+$(Q5_OCC_GROUPED_FULL): $(CORE_PROPS_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
+	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py <(rg -F '/prop/direct/P106>' $(CORE_PROPS_NT))
 	@touch $@
 
 # Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED_FULL
@@ -263,19 +262,15 @@ $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
 # 1. Extract core properties and P106 in a single decompression pass
 # -----------------------
 
-# Direct rule for core properties and P106 extraction
+# Direct rule for core properties extraction (includes P106)
 # This replaces the CORE_EXTRACT_DONE sentinel with direct file dependencies
-$(CORE_PROPS_NT) $(P106_NT): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
-	pigz -dc $(CLEANED_GZ) \
-	  | tee \
-	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
-	        | rg -F -v '_:' \
-	        | awk -v sf=$(SITELINKS_FILE) \
-	            'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
-	        > $(CORE_PROPS_NT)) \
-	    >(rg -F '/prop/direct/P106>' \
-	        | rg -F -v '_:' > $(P106_NT)) \
-	    > /dev/null; wait
+$(CORE_PROPS_NT): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
+	pigz -dc -p 4 $(CLEANED_GZ) \
+	  | rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' \
+	  | rg -F -v '_:' \
+	  | awk -v sf=$(SITELINKS_FILE) \
+	      'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+	  > $@; wait
 
 # Extract Q5 (human) subjects with sitelinks from core props
 $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
