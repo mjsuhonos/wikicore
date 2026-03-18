@@ -111,8 +111,6 @@ SPLIT_DIR             := $(WORK_DIR)/splits
 SUBJECTS_DIR          := $(WORK_DIR)/subjects
 SUBJECTS_SORTED       := $(SUBJECTS_DIR)/subjects_sorted.tsv
 SUBJECTS_DONE         := $(SUBJECTS_DIR)/.subjects_individually_sorted
-LABELS_SPLIT_DIR      := $(WORK_DIR)/label_splits
-LABELS_SPLIT_DONE     := $(LABELS_SPLIT_DIR)/.labels_split_done
 LABELS_ROUTED_DONE    := $(SKOS_DIR)/.labels_routed_done
 CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
@@ -183,13 +181,9 @@ ALL_OCC_NAMES        := $(basename $(notdir $(ALL_OCC_FILES)))
 ALL_OCC_GROUP_NTS    := $(foreach O,$(ALL_OCC_NAMES),$(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).nt)
 
 # Individual occupation QID files (one per occupation QID).
-# ALL_OCC_QIDS is the full list from TSV files; used for the "claim" rule and OCC_QIDS_FILE.
-# occ_qids uses a sub-make driven by active_occ_qids.txt (written by group_q5_by_occupation.py)
-# so that QIDs with zero Q5 subjects are never targeted.
+# ALL_OCC_QIDS: full list from TSV files for claim rules
+# ALL_OCC_WITH_UNMATCHED: includes synthetic "unmatched" group for Q5 humans without occupation matches
 ALL_OCC_QIDS         := $(sort $(foreach F,$(ALL_OCC_FILES),$(shell awk '{print $$1}' $(F))))
-
-# ALL_OCC_WITH_UNMATCHED includes the synthetic "unmatched" group (Q5 humans with no
-# occupation match) generated as a side effect of group_q5_by_occupation.py.
 ALL_OCC_WITH_UNMATCHED := $(ALL_OCC_NAMES) unmatched
 
 # Fulltext derived targets
@@ -208,7 +202,6 @@ $(Q5_OCC_GROUPED_CORE): $(P106_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJEC
 # Q5_unmatched_subjects.tsv is claimed as output below (after both core and full versions are defined)
 
 # Full version of Q5 occupation grouping (creates per-QID subject files)
-# This is the original Q5_OCC_GROUPED target, now renamed for clarity
 Q5_OCC_GROUPED_FULL := $(Q5_OCC_GROUPED)
 Q5_OCC_GROUPED := $(Q5_OCC_GROUPED_FULL)
 
@@ -269,9 +262,10 @@ $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
 # -----------------------
 # 1. Extract core properties and P106 in a single decompression pass
 # -----------------------
-CORE_EXTRACT_DONE := $(WORK_DIR)/.core_extract_done
 
-$(CORE_EXTRACT_DONE): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
+# Direct rule for core properties and P106 extraction
+# This replaces the CORE_EXTRACT_DONE sentinel with direct file dependencies
+$(CORE_PROPS_NT) $(P106_NT): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_DIR)
 	pigz -dc $(CLEANED_GZ) \
 	  | tee \
 	    >(rg -F -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' \
@@ -282,14 +276,9 @@ $(CORE_EXTRACT_DONE): $(CLEANED_GZ) $(SITELINKS_FILE) | $(WORK_DIR) $(SUBJECTS_D
 	    >(rg -F '/prop/direct/P106>' \
 	        | rg -F -v '_:' > $(P106_NT)) \
 	    > /dev/null; wait
-	@touch $@
 
-$(CORE_PROPS_NT) $(P106_NT): $(CORE_EXTRACT_DONE)
-
-# Extract Q5 (human) subjects with sitelinks from core props (separate rule to
-# avoid race condition with parallel builds: process substitution in step 1 may
-# not flush Q5_SUBJECTS_FILE before make considers the &: recipe done)
-$(Q5_SUBJECTS_FILE): $(CORE_EXTRACT_DONE) | $(SUBJECTS_DIR)
+# Extract Q5 (human) subjects with sitelinks from core props
+$(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 	rg -F '/prop/direct/P31> <http://www.wikidata.org/entity/Q5>' $(CORE_PROPS_NT) \
 	  | awk '{print $$1}' \
 	  | LC_ALL=C sort -u > $@
@@ -299,7 +288,7 @@ $(Q5_SUBJECTS_FILE): $(CORE_EXTRACT_DONE) | $(SUBJECTS_DIR)
 # -----------------------
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
-$(SPLIT_DONE): $(CORE_EXTRACT_DONE) | $(SPLIT_DIR)
+$(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 	split -l $$(( ($$(wc -l < $(CORE_PROPS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
@@ -326,12 +315,7 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 # -----------------------
 
 # Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
-# NOTE: $(CORE_QIDS) must be listed here to prevent a race condition under make -j.
-# Both SUBJECTS_DONE and CORE_QIDS depend on CONCEPT_BACKBONE and would run in
-# parallel. CORE_QIDS creates core_subjects.tsv via shell redirection (> $@), which
-# immediately creates an empty file before any data is written. The parallel sort glob
-# (*subjects.tsv) can find that empty file, sort it, and mv-replace it with an empty
-# file — causing CORE_QIDS's output to be written to the now-unlinked old inode.
+# NOTE: $(CORE_QIDS) prevents race condition with parallel SUBJECTS_DONE
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(CORE_QIDS)
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
 	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
@@ -342,21 +326,15 @@ $(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(CORE_QIDS)
 $(SUBJECTS_DIR)/%_subjects.tsv: $(SUBJECTS_DONE) ;
 
 # Merge all pre-filtered per-subject files into a single sorted, deduplicated file
-#
-# NB: to exclude ALL instance subjects,  use "$(SUBJECTS_DIR)/*subjects.tsv"
-#     to include p31_other.subjects.tsv, use "$(SUBJECTS_DIR)/Q*subjects.tsv"
 $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	LC_ALL=C sort -m -u $(SUBJECTS_DIR)/*subjects.tsv \
 	 > $@
 
 # -----------------------
-# 3b. Group Q5 humans by occupation (P106_NT and Q5_SUBJECTS_FILE from combined step 1)
+# 3b. Group Q5 humans by occupation
 # -----------------------
 
-# Note: Q5_OCC_GROUPED targets are now defined above in two versions:
-# - Q5_OCC_GROUPED_CORE: for core processing (skips per-QID files)
-# - Q5_OCC_GROUPED_FULL: for occupation processing (creates per-QID files)
-# The Q5_OCC_GROUPED variable points to Q5_OCC_GROUPED_FULL for backward compatibility
+# Note: Q5_OCC_GROUPED targets defined above in core and full versions
 
 # -----------------------
 # 4. Extract core concepts using file operations
