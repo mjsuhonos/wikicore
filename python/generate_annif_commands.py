@@ -7,33 +7,67 @@ import re
 from pathlib import Path
 from typing import List, Dict
 
-def get_fulltext_file_path(vocab: str, suffix: str, fulltext_dir: Path) -> Path:
+def get_fulltext_file_path(vocab: str, suffix: str, fulltext_dir: Path, date: str) -> Path:
     """Construct fulltext file path based on vocab name and suffix."""
     splits_dir = fulltext_dir / "splits"
     
     # Construct the expected filename based on vocab name
-    # Remove prefixes and use the base name
+    # The vocab name is already in the format wikicore-20260325-core-en, etc.
+    # We just need to extract the middle part (core, cultural, etc.)
+    
+    # Remove the wikicore-YYYYMMDD- prefix and -en suffix to get the base name
     vocab_base = vocab
-    if vocab_base.startswith("class-"):
-        vocab_base = vocab_base[6:]  # Remove "class-" prefix
-    elif vocab_base.startswith("occ-"):
-        vocab_base = vocab_base[4:]  # Remove "occ-" prefix
+    if vocab_base.startswith("wikicore-"):
+        # Remove wikicore-YYYYMMDD- prefix
+        vocab_base = re.sub(r'wikicore-\d{8}-', '', vocab_base)
+        # Remove -en suffix
+        vocab_base = re.sub(r'-en$', '', vocab_base)
+    
+    # For class and occ vocabularies, we need to handle the directory structure
+    vocab_dir = ""
+    if "class-" in vocab:
+        vocab_dir = "classes"
+        # Remove class- prefix from the base name
+        vocab_base = vocab_base.replace("class-", "")
+    elif "occ-" in vocab:
+        vocab_dir = "occupations"
+        # Remove occ- prefix from the base name
+        vocab_base = vocab_base.replace("occ-", "")
     
     # Construct the expected filename pattern
     if suffix:
-        filename = f"wikicore-*-{vocab_base}-*.{suffix}.tsv"
+        filename = f"wikicore-{date}-{vocab_base}-en.{suffix}.tsv"
     else:
-        filename = f"wikicore-*-{vocab_base}-*.tsv"
+        filename = f"wikicore-{date}-{vocab_base}-en.tsv"
     
-    # Look for the file in the splits directory
-    matches = list(splits_dir.glob(filename))
+    # Look for the file in the appropriate subdirectory
+    if vocab_dir:
+        subdir_path = splits_dir / vocab_dir / filename
+        if subdir_path.exists():
+            return subdir_path
+    else:
+        # For core, unmatched, other - look in the main splits directory
+        main_path = splits_dir / filename
+        if main_path.exists():
+            return main_path
     
-    if matches:
-        return matches[0]
+    # If not found, try glob pattern as fallback
+    if vocab_dir:
+        glob_pattern = f"wikicore-*-{vocab_base}-*.{suffix}.tsv" if suffix else f"wikicore-*-{vocab_base}-*.tsv"
+        matches = list((splits_dir / vocab_dir).glob(glob_pattern))
+        if matches:
+            return matches[0]
+    else:
+        glob_pattern = f"wikicore-*-{vocab_base}-*.{suffix}.tsv" if suffix else f"wikicore-*-{vocab_base}-*.tsv"
+        matches = list(splits_dir.glob(glob_pattern))
+        if matches:
+            return matches[0]
     
-    # If not found, return a path that likely exists based on the pattern
-    # This handles the case where we need to construct the path explicitly
-    return splits_dir / f"wikicore-*-{vocab_base}-*.{suffix}.tsv" if suffix else splits_dir / f"wikicore-*-{vocab_base}-*.tsv"
+    # If still not found, return the expected path (it might be created later)
+    if vocab_dir:
+        return splits_dir / vocab_dir / filename
+    else:
+        return splits_dir / filename
 
 def get_vocab_dir(vocab: str) -> str:
     """Get vocabulary directory based on vocab name."""
@@ -51,15 +85,15 @@ def get_vocab_filename(vocab: str) -> str:
         return vocab.replace("occ-", "")
     return vocab
 
-def process_project(project: str, backend: str, vocab: str, fulltext_dir: Path, output_lines: List[str]):
+def process_project(project: str, backend: str, vocab: str, fulltext_dir: Path, date: str, output_lines: List[str]):
     """Process a project and generate train/eval commands."""
     # Get file paths
-    train_file = get_fulltext_file_path(vocab, "train", fulltext_dir)
-    eval_file = get_fulltext_file_path(vocab, "eval", fulltext_dir)
+    train_file = get_fulltext_file_path(vocab, "train", fulltext_dir, date)
+    eval_file = get_fulltext_file_path(vocab, "eval", fulltext_dir, date)
     if not eval_file.exists():
-        eval_file = get_fulltext_file_path(vocab, "test", fulltext_dir)
+        eval_file = get_fulltext_file_path(vocab, "test", fulltext_dir, date)
     if not eval_file.exists():
-        eval_file = get_fulltext_file_path(vocab, "", fulltext_dir)
+        eval_file = get_fulltext_file_path(vocab, "", fulltext_dir, date)
     
     output_lines.append(f"echo 'Processing {project} ({backend})...'")
     
@@ -79,7 +113,7 @@ def process_project(project: str, backend: str, vocab: str, fulltext_dir: Path, 
     
     output_lines.append("")
 
-def parse_project_file(project_file: Path, fulltext_dir: Path) -> List[str]:
+def parse_project_file(project_file: Path, fulltext_dir: Path, date: str) -> List[str]:
     """Parse project file and generate commands."""
     output_lines = []
     
@@ -125,7 +159,7 @@ def parse_project_file(project_file: Path, fulltext_dir: Path) -> List[str]:
             if section_match:
                 # Process previous project if complete
                 if project and backend and vocab:
-                    process_project(project, backend, vocab, fulltext_dir, output_lines)
+                    process_project(project, backend, vocab, fulltext_dir, date, output_lines)
                 
                 project = section_match.group(1)
                 backend = ""
@@ -141,7 +175,7 @@ def parse_project_file(project_file: Path, fulltext_dir: Path) -> List[str]:
     
     # Process last project
     if project and backend and vocab:
-        process_project(project, backend, vocab, fulltext_dir, output_lines)
+        process_project(project, backend, vocab, fulltext_dir, date, output_lines)
     
     return output_lines
 
@@ -153,6 +187,8 @@ def main():
     parser.add_argument("--fulltext-dir", required=True, help="Path to fulltext directory")
     parser.add_argument("--output-script", required=True, help="Output script path")
     args = parser.parse_args()
+    
+    date = args.date
     
     # Create output directory
     output_script = Path(args.output_script)
@@ -178,7 +214,7 @@ def main():
     
     for project_file in project_files:
         print(f"Processing {project_file.name}...")
-        project_lines = parse_project_file(project_file, fulltext_dir)
+        project_lines = parse_project_file(project_file, fulltext_dir, date)
         output_lines.extend(project_lines)
     
     # Finish the script

@@ -7,6 +7,7 @@ SHELL := /bin/bash
 .PHONY: all skos fulltext \
         skos_core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
         skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
+        classes_combined occupations_combined \
         turtle clean help \
         fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
         fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched \
@@ -219,11 +220,9 @@ skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-#skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched
-skos: skos_core skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other
+skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other
 
-#fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
-fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups fulltext_occ_unmatched fulltext_P31_other
+fulltext: fulltext_core fulltext_class_qids fulltext_occ_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
 
 all: skos fulltext
 
@@ -732,6 +731,9 @@ $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_
 # All occupation group fulltext files
 ALL_OCC_GROUPS_FULLTEXT := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).tsv)
 
+# All occupation QID fulltext files (individual QIDs)
+ALL_OCC_QIDS_FULLTEXT := $(foreach Q,$(ALL_OCC_QIDS),$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
+
 fulltext_occ_groups: $(ALL_OCC_GROUPS_FULLTEXT)
 
 # Specific occupation group: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
@@ -815,10 +817,31 @@ fulltext_occ_qid: $(OCC_QID_FULLTEXT_OUTS)
 # -----------------------
 ANNIF_DIR := $(ROOT_DIR)/annif
 
+# Combined NT files for classes and occupations
+CLASSES_COMBINED_NT := $(OUT_DIR)/wikicore-$(RUN_DATE)-classes-$(LOCALE).nt
+OCCUPATIONS_COMBINED_NT := $(OUT_DIR)/wikicore-$(RUN_DATE)-occupations-$(LOCALE).nt
+
+# Target to combine all class NT files
+classes_combined: $(CLASSES_COMBINED_NT)
+
+# Target to combine all occupation NT files  
+occupations_combined: $(OCCUPATIONS_COMBINED_NT)
+
+# Generate combined classes NT file
+$(CLASSES_COMBINED_NT): $(ALL_CLASS_GROUP_NTS) | $(OUT_DIR)
+	cat $^ > $@
+	@echo "Generated $@"
+
+# Generate combined occupations NT file
+$(OCCUPATIONS_COMBINED_NT): $(ALL_OCC_GROUP_NTS) | $(OUT_DIR)
+	cat $^ > $@
+	@echo "Generated $@"
+
 annif_projects: | $(ANNIF_DIR)
 	python3 $(ROOT_DIR)/python/generate_annif_projects.py \
 	  --date $(RUN_DATE) \
 	  --lang $(LOCALE) \
+	  --subjects-dir $(SUBJECTS_DIR) \
 	  --classes-dir $(ROOT_DIR)/classes \
 	  --occs-dir $(ROOT_DIR)/occupations \
 	  --outdir $(ANNIF_DIR)
