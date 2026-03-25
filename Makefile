@@ -388,7 +388,7 @@ $(SKOS_DIR)/skos_%_concept_scheme.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(OCC_QIDS_
 		vocab_uri="$(VOCAB_URI)/occupations/$${id#Q5_}"; \
 	elif [[ "$$id" == P106-Q* ]]; then \
 		vocab_uri="$(VOCAB_URI)/occupations/$${id#P106-}"; \
-	elif [[ "$$id" =~ ^Q[0-9]+$$ ]] && grep -qF "$$id" $(OCC_QIDS_FILE); then \
+	elif [[ "$$id" =~ ^Q[0-9]+$$ ]] && grep -qxF "$$id" $(OCC_QIDS_FILE); then \
 		vocab_uri="$(VOCAB_URI)/occupations/$$id"; \
 	elif [[ "$$id" =~ ^Q[0-9]+$$ ]]; then \
 		vocab_uri="$(VOCAB_URI)/subjects/$$id"; \
