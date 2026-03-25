@@ -19,43 +19,29 @@ help:
 	@echo ""
 	@echo "Usage: make <target> [OPTIONS]"
 	@echo ""
-	@echo "Aggregate targets:"
+	@echo "Main targets:"
 	@echo "  all                                   Build everything: skos + fulltext"
-	@echo "  skos                                  Build all SKOS .nt files (core + class_qids/groups + occ_qids/groups + unmatched + P31_other)"
-	@echo "  fulltext                              Build all fulltext TSVs (require source.nosync/wikidata5m_text.txt.gz)"
+	@echo "  skos                                  Build all SKOS .nt files"
+	@echo "  fulltext                              Build all fulltext TSVs"
 	@echo ""
-	@echo "SKOS targets:"
-	@echo "  skos_core                             Build the core SKOS vocab (wikicore-DATE-core-LOCALE.nt)"
-	@echo "  skos_class_qids                       Build one .nt per class QID across all classes/ TSVs (777 files)"
-	@echo "  skos_class_groups                     Build one combined .nt per classes/ TSV (43 files)"
-	@echo "  skos_occ_qids                         Build one .nt per occupation QID (up to 1,449 files, SKOS about Q5 humans)"
-	@echo "  skos_occ_groups                       Build one combined .nt per occupations/ TSV (19 files, SKOS about Q5 humans)"
-	@echo "  skos_class_qid QIDS='...'             Build SKOS for specific class QIDs (eg. 'Q5 Q532')"
-	@echo "  skos_class_group CLASS_FILE=<path>    Build combined .nt for a single classes/ TSV"
-	@echo "  skos_occ_qid QID=<QID>                Build SKOS for Q5 humans with a specific occupation QID"
-	@echo "  skos_occ_group OCC_FILE=<path>        Build combined .nt for a single occupations/ TSV"
-	@echo "  skos_occ_unmatched                    Build SKOS for Q5 humans with no matched occupation"
-	@echo "  skos_P31_other                        Build SKOS for entities with unrecognized P31 values"
-	@echo "  turtle                                Convert all .nt files to compressed Turtle (.ttl.gz)"
+	@echo "Common targets:"
+	@echo "  skos_core                             Build the core SKOS vocab"
+	@echo "  skos_class_groups                     Build combined SKOS per classes/ TSV (43 files)"
+	@echo "  skos_occ_groups                       Build combined SKOS per occupations/ TSV (19 files)"
 	@echo ""
-	@echo "Fulltext targets:"
-	@echo "  fulltext_core                         Build fulltext TSV for core vocabulary concepts"
-	@echo "  fulltext_class_qids                   Build one fulltext TSV per class QID"
-	@echo "  fulltext_class_groups                 Build one combined fulltext TSV per classes/ TSV"
-	@echo "  fulltext_occ_groups                   Build one combined fulltext TSV per occupations/ TSV (people)"
-	@echo "  fulltext_class_qid QIDS='...'         Build fulltext TSVs for specific class QIDs (eg. 'Q5 Q532')"
-	@echo "  fulltext_class_group CLASS_FILE=<path> Build combined fulltext TSV for a single classes/ TSV"
-	@echo "  fulltext_occ_group OCC_FILE=<path>    Build combined fulltext TSV for a single occupations/ TSV"
-	@echo "  fulltext_occ_qids                     Build one fulltext TSV per occupation QID (people)"
-	@echo "  fulltext_occ_qid QIDS='...'           Build fulltext TSVs for specific occupation QIDs (eg. 'Q33999')"
-	@echo "  fulltext_occ_unmatched                Build fulltext TSV for Q5 humans with no matched occupation"
-	@echo "  fulltext_P31_other                    Build fulltext TSV for entities with unrecognized P31 values"
+	@echo "  fulltext_core                         Build fulltext TSV for core vocabulary"
+	@echo "  fulltext_class_groups                 Build combined fulltext per classes/ TSV"
+	@echo "  fulltext_occ_groups                   Build combined fulltext per occupations/ TSV"
+	@echo "  turtle                                Convert .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "Annif targets:"
-	@echo "  annif_projects                        Generate Annif project .cfg files into annif/"
+	@echo "  annif_projects                        Generate Annif project .cfg files"
+	@echo "  annif_script                          Generate script to train and evaluate Annif projects"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  clean                                 Remove working files"
+	@echo ""
+	@echo "For advanced usage and additional targets, see the Makefile or use 'make <target> --help'"
 	@echo ""
 	@echo "Options:"
 	@echo "  LOCALE=<lang>   Output language (default: en)"
@@ -233,12 +219,11 @@ skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched
+#skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched
+skos: skos_core skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other
 
-# Build P31_other SKOS after all subjects are processed
-skos: skos_P31_other
-
-fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
+#fulltext: fulltext_core fulltext_class_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
+fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups fulltext_occ_unmatched fulltext_P31_other
 
 all: skos fulltext
 
@@ -840,4 +825,25 @@ annif_projects: | $(ANNIF_DIR)
 
 $(ANNIF_DIR):
 	mkdir -p $@
+
+# -----------------------
+# Fulltext splits for training/evaluation
+# -----------------------
+fulltext_splits:
+	python3 $(ROOT_DIR)/python/create_fulltext_splits.py --locale $(LOCALE) --fulltext-dir $(FULLTEXT_DIR)
+$(FULLTEXT_SPLITS_DIR):
+	mkdir -p $@
+
+# -----------------------
+# Annif training and evaluation
+# -----------------------
+annif_script: fulltext_splits annif_projects
+	python3 $(ROOT_DIR)/python/generate_annif_commands.py \
+	  --date $(RUN_DATE) \
+	  --lang $(LOCALE) \
+	  --annif-dir $(ANNIF_DIR) \
+	  --fulltext-dir $(FULLTEXT_DIR) \
+	  --output-script $(ROOT_DIR)/scripts/run_annif_commands_$(RUN_DATE)_$(LOCALE).sh
+	@echo "Generated Annif command script: scripts/run_annif_commands_$(RUN_DATE)_$(LOCALE).sh"
+	@echo "Run it with: ./scripts/run_annif_commands_$(RUN_DATE)_$(LOCALE).sh"
 

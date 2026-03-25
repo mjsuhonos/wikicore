@@ -14,15 +14,14 @@ SNOWBALL_MAP = {
 }
 
 PROJECT_TEMPLATE = """\
-[wikicore_{lang}_yake_{slug}]
-name = WikiCore YAKE {label} ({lang})
-backend = yake
+[wikicore_{lang}_mllm_{slug}]
+name = WikiCore MLLM {label} ({lang})
+backend = mllm
 language = {lang}
 analyzer=snowball({lang_name})
 vocab=wikicore-{date}-{vocab_slug}-{lang}
 limit=100
 """
-
 
 def make_entry(lang, lang_name, date, slug, label, vocab_slug):
     return PROJECT_TEMPLATE.format(
@@ -34,7 +33,6 @@ def make_entry(lang, lang_name, date, slug, label, vocab_slug):
         vocab_slug=vocab_slug,
     )
 
-
 def write_cfg(path, entries):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -43,12 +41,9 @@ def write_cfg(path, entries):
             f.write("\n")
     print(f"Written {path} ({len(entries)} entries)")
 
-
 def stem_names_from_dir(tsv_dir):
     """Return sorted list of stem names from *.tsv files in tsv_dir."""
     return sorted(p.stem for p in Path(tsv_dir).glob("*.tsv"))
-
-
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Annif project .cfg files")
@@ -67,7 +62,7 @@ def main():
     # --- core ---
     entries = [make_entry(lang, lang_name, date, "core", "Core", "core")]
     write_cfg(outdir / "projects_core.cfg", entries)
-
+    
     # --- unmatched ---
     entries = [make_entry(lang, lang_name, date, "unmatched", "Unmatched", "unmatched")]
     write_cfg(outdir / "projects_unmatched.cfg", entries)
