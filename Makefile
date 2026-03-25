@@ -26,14 +26,14 @@ help:
 	@echo "  fulltext                              Build all fulltext TSVs"
 	@echo ""
 	@echo "Common targets:"
-	@echo "  skos_core                             Build the core SKOS vocab"
-	@echo "  skos_class_groups                     Build combined SKOS per classes/ TSV (43 files)"
-	@echo "  skos_occ_groups                       Build combined SKOS per occupations/ TSV (19 files)"
+	@echo "  skos_core                             Build the core SKOS vocabulary"
+	@echo "  skos_class_groups                     Build combined SKOS per classes/ TSV"
+	@echo "  skos_occ_groups                       Build combined SKOS per occupations/ TSV"
+	@echo "  turtle                                Convert .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "  fulltext_core                         Build fulltext TSV for core vocabulary"
 	@echo "  fulltext_class_groups                 Build combined fulltext per classes/ TSV"
 	@echo "  fulltext_occ_groups                   Build combined fulltext per occupations/ TSV"
-	@echo "  turtle                                Convert .nt files to compressed Turtle (.ttl.gz)"
 	@echo ""
 	@echo "Annif targets:"
 	@echo "  annif_projects                        Generate Annif project .cfg files"
@@ -220,7 +220,7 @@ skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other
+skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other classes_combined occupations_combined
 
 fulltext: fulltext_core fulltext_class_qids fulltext_occ_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
 
