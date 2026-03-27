@@ -5,12 +5,11 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 .PHONY: all skos fulltext \
-        skos_core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
-        skos_class_group skos_occ_group \
+        skos_core skos_class_groups skos_occ_groups \
+        skos_class_qids skos_occ_qids \
         turtle clean help \
-        fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_group \
-        fulltext_occ_groups fulltext_occ_group \
-        fulltext_occ_qids \
+        fulltext_core fulltext_class_groups fulltext_occ_groups \
+        fulltext_class_qids fulltext_occ_qids \
         annif_projects
 
 help:
@@ -101,18 +100,18 @@ CONCEPT_BACKBONE_SORTED := $(WORK_DIR)/concept_backbone_sorted.nt
 
 # Fulltext working files
 FULLTEXT_GZ                := $(SOURCE_DIR)/wikidata5m_text.txt.gz
-FULLTEXT_CORE_MAP          := $(WORK_DIR)/fulltext_core_map.tsv
-FULLTEXT_CORE_DONE         := $(WORK_DIR)/.fulltext_core_done
-FULLTEXT_CLASS_QIDS_FILE   := $(WORK_DIR)/fulltext_class_qids.txt
-FULLTEXT_CLASS_INSTANCE_MAP := $(WORK_DIR)/fulltext_class_instance_map.tsv
-FULLTEXT_CLASS_SPLIT_DONE  := $(WORK_DIR)/.fulltext_class_split_done
-FULLTEXT_OCC_GROUP_MAP     := $(WORK_DIR)/fulltext_occ_group_map.tsv
-FULLTEXT_OCC_GROUPS_DONE   := $(WORK_DIR)/.fulltext_occ_groups_done
-FULLTEXT_OCC_QID_MAP      := $(WORK_DIR)/fulltext_occ_qid_map.tsv
-FULLTEXT_OCC_QIDS_DONE    := $(WORK_DIR)/.fulltext_occ_qids_done
-FULLTEXT_P31_OTHER_MAP    := $(WORK_DIR)/fulltext_p31_other_map.tsv
-FULLTEXT_P31_OTHER_DONE   := $(WORK_DIR)/.fulltext_p31_other_done
-FULLTEXT_CLASS_GROUPS_DONE := $(WORK_DIR)/.fulltext_class_groups_done
+CORE_MAP                    := $(WORK_DIR)/core_map.tsv
+CORE_DONE                   := $(WORK_DIR)/.core_done
+CLASS_QIDS_FILE             := $(WORK_DIR)/class_qids.txt
+CLASS_INSTANCE_MAP          := $(WORK_DIR)/class_instance_map.tsv
+CLASS_SPLIT_DONE            := $(WORK_DIR)/.class_split_done
+OCC_GROUP_MAP               := $(WORK_DIR)/occ_group_map.tsv
+OCC_GROUPS_DONE             := $(WORK_DIR)/.occ_groups_done
+OCC_QID_MAP                := $(WORK_DIR)/occ_qid_map.tsv
+OCC_QIDS_DONE              := $(WORK_DIR)/.occ_qids_done
+P31_OTHER_MAP              := $(WORK_DIR)/p31_other_map.tsv
+P31_OTHER_DONE             := $(WORK_DIR)/.p31_other_done
+CLASS_GROUPS_DONE          := $(WORK_DIR)/.class_groups_done
 
 # Fulltext output files
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
@@ -426,20 +425,9 @@ $(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 
 # -----------------------
 # 8. Generate SKOS vocab from a classes/ TSV
-# eg. make skos_class_group CLASS_FILE=classes/aircraft.tsv
 # -----------------------
 
-CLASS_FILE  ?=
-CLASS_NAME   = $(basename $(notdir $(CLASS_FILE)))
-CLASS_NT     = $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).nt
-
-skos_class_group:
-ifndef CLASS_FILE
-	$(error CLASS_FILE is not set. Usage: make skos_class_group CLASS_FILE=classes/aircraft.tsv)
-endif
-	$(MAKE) $(CLASS_NT)
-
-# Per-class combined NTs — one rule per classes/*.tsv (used by skos_class_group and make class_groups)
+# Per-class combined NTs — one rule per classes/*.tsv
 # Generate directly from component files without requiring individual QID files
 define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
@@ -456,18 +444,7 @@ endef
 # -----------------------
 # 9. Generate SKOS vocabs from occupations/ TSVs
 # Each occupation generates SKOS about Q5 (human) entities that have that occupation
-# eg. make skos_occ_group OCC_FILE=occupations/engineering.tsv
 # -----------------------
-
-OCC_FILE   ?=
-OCC_NAME    = $(basename $(notdir $(OCC_FILE)))
-OCC_NT      = $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).nt
-
-skos_occ_group:
-ifndef OCC_FILE
-	$(error OCC_FILE is not set. Usage: make skos_occ_group OCC_FILE=occupations/engineering.tsv)
-endif
-	$(MAKE) $(OCC_NT)
 
 # Per-occupation combined NTs — one rule per occupations/*.tsv
 # Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
@@ -592,14 +569,14 @@ clean:
 # -----------------------
 
 # Build core QID → "core" group map from core_subjects.tsv (URI format)
-$(FULLTEXT_CORE_MAP): $(WORK_DIR)/.core_qids_done | $(WORK_DIR)
+$(CORE_MAP): $(WORK_DIR)/.core_qids_done | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $< \
 	  | awk '{print $$1 "\tcore"}' > $@
 
 # Single pass through fulltext GZ for all core concept QIDs
-$(FULLTEXT_CORE_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CORE_MAP) | $(FULLTEXT_DIR)
+$(CORE_DONE): $(FULLTEXT_GZ) $(CORE_MAP) | $(FULLTEXT_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
-	  --map     $(FULLTEXT_CORE_MAP) \
+	  --map     $(CORE_MAP) \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_DIR) \
 	  --date    $(RUN_DATE) \
@@ -607,28 +584,27 @@ $(FULLTEXT_CORE_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CORE_MAP) | $(FULLTEXT_DIR)
 	  --groups  core
 	@touch $@
 
-$(FULLTEXT_CORE_TSV): $(FULLTEXT_CORE_DONE) ;
+$(FULLTEXT_CORE_TSV): $(CORE_DONE) ;
 
 fulltext_core: $(FULLTEXT_CORE_TSV)
 
 # -----------------------
 # Class domain fulltext
 # eg. make fulltext_class_qids
-#     make fulltext_class_groups
-#     make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
+
 # -----------------------
 
 # Collect all class QIDs across all classes/ TSVs
-$(FULLTEXT_CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
+$(CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
 	cat $(ALL_CLASS_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # Build instance QID -> class QID mapping from P31 relationships.
 # Runs rg+awk in parallel over pre-split chunks (reusing SPLIT_DONE from step 2).
 # awk hash lookup filters to target class QIDs before sorting, avoiding an
 # expensive sort+join on the full P31 dataset.
-$(FULLTEXT_CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(FULLTEXT_CLASS_QIDS_FILE) | $(WORK_DIR)
+$(CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(CLASS_QIDS_FILE) | $(WORK_DIR)
 	@echo "Building class instance map from P31 relationships..."
-	@export qf="$(FULLTEXT_CLASS_QIDS_FILE)"; \
+	@export qf="$(CLASS_QIDS_FILE)"; \
 	 filter_p31() { \
 	   rg -F '/prop/direct/P31>' "$$1" \
 	   | awk -v f="$$qf" \
@@ -643,10 +619,10 @@ $(FULLTEXT_CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(FULLTEXT_CLASS_QIDS_FILE) | $(WO
 
 # Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
-$(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FULLTEXT_CLASS_QIDS_FILE) $(ALL_CLASS_FILES) | $(FULLTEXT_CLASS_QIDS_DIR)
+$(CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(CLASS_QIDS_FILE) $(ALL_CLASS_FILES) | $(FULLTEXT_CLASS_QIDS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py classes \
-	  --map     $(FULLTEXT_CLASS_INSTANCE_MAP) \
-	  --qids    $(FULLTEXT_CLASS_QIDS_FILE) \
+	  --map     $(CLASS_INSTANCE_MAP) \
+	  --qids    $(CLASS_QIDS_FILE) \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_CLASS_QIDS_DIR) \
 	  --date    $(RUN_DATE) \
@@ -654,17 +630,17 @@ $(FULLTEXT_CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(FU
 	@touch $@
 
 # Claim per-class-QID fulltext TSVs as outputs of the split
-$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_SPLIT_DONE)
+$(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(CLASS_SPLIT_DONE)
 	@[ -f $@ ] || touch $@
 
 # All class QID fulltext files
-fulltext_class_qids: $(FULLTEXT_CLASS_SPLIT_DONE)
+fulltext_class_qids: $(CLASS_SPLIT_DONE)
 
 
 
 # Per-class-group fulltext files are now generated by the single-pass split_fulltext.py
-# The individual rules are kept as placeholders but the actual generation is done by FULLTEXT_CLASS_GROUPS_DONE
-$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_GROUPS_DONE)
+# The individual rules are kept as placeholders but the actual generation is done by CLASS_GROUPS_DONE
+$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(CLASS_GROUPS_DONE)
 	@# File is generated by the single-pass processing above
 
 # Fix CLASS_RULE to handle missing SKOS files gracefully
@@ -676,14 +652,14 @@ endef
 $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 # All class group fulltext files
-fulltext_class_groups: $(FULLTEXT_CLASS_GROUPS_DONE)
+fulltext_class_groups: $(CLASS_GROUPS_DONE)
 
-$(FULLTEXT_CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(FULLTEXT_CLASS_GROUPS_DIR)
+$(CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(FULLTEXT_CLASS_GROUPS_DIR)
 	# Single pass through fulltext GZ: one TSV per class group.
 	# This is much more memory-efficient than running split_fulltext_for_group.py for each class.
 	@echo "Generating all fulltext class groups in single pass..."
 	python3 $(ROOT_DIR)/python/split_fulltext.py class_groups \
-	  --map     $(FULLTEXT_CLASS_INSTANCE_MAP) \
+	  --map     $(CLASS_INSTANCE_MAP) \
 	  --class-files "$(ROOT_DIR)/classes/" \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_CLASS_GROUPS_DIR) \
@@ -691,19 +667,10 @@ $(FULLTEXT_CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(S
 	  --locale  $(LOCALE)
 	@touch $@
 
-# Specific class group: make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
-CLASS_GROUP_FULLTEXT_TSV = $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).tsv
-
-fulltext_class_group:
-ifndef CLASS_FILE
-	$(error CLASS_FILE is not set. Usage: make fulltext_class_group CLASS_FILE=classes/aircraft.tsv)
-endif
-	$(MAKE) $(CLASS_GROUP_FULLTEXT_TSV)
 
 # -----------------------
 # Occupation domain fulltext
 # eg. make fulltext_occ_groups
-#     make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
 #
 # Source QIDs come from the subjects/ working files (URI format) created by
 # group_q5_by_occupation.py:
@@ -713,7 +680,7 @@ endif
 # -----------------------
 
 # Build human-QID → group-name mapping from Q5_*_subjects.tsv files
-$(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
+$(OCC_GROUP_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
 	@echo "Building occupation group fulltext QID map..."
 	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
 	    f="$(SUBJECTS_DIR)/Q5_$${occ}_subjects.tsv"; \
@@ -724,9 +691,9 @@ $(FULLTEXT_OCC_GROUP_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
 
 # Single pass through fulltext GZ: one TSV per occupation group.
 # A person in multiple groups is written to each group file.
-$(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
+$(OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
-	  --map     $(FULLTEXT_OCC_GROUP_MAP) \
+	  --map     $(OCC_GROUP_MAP) \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_OCC_GROUPS_DIR) \
 	  --date    $(RUN_DATE) \
@@ -735,7 +702,7 @@ $(FULLTEXT_OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_GROUP_MAP) | $(FULLTE
 	@touch $@
 
 # Claim per-occ-group fulltext TSVs as outputs of the split
-$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_GROUPS_DONE) ;
+$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(OCC_GROUPS_DONE) ;
 
 # All occupation group fulltext files
 ALL_OCC_GROUPS_FULLTEXT := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(O)-$(LOCALE).tsv)
@@ -744,15 +711,6 @@ ALL_OCC_GROUPS_FULLTEXT := $(foreach O,$(ALL_OCC_NAMES),$(FULLTEXT_OCC_GROUPS_DI
 ALL_OCC_QIDS_FULLTEXT := $(foreach Q,$(ALL_OCC_QIDS),$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv)
 
 fulltext_occ_groups: $(ALL_OCC_GROUPS_FULLTEXT)
-
-# Specific occupation group: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv
-OCC_GROUP_FULLTEXT_TSV = $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(OCC_NAME)-$(LOCALE).tsv
-
-fulltext_occ_group:
-ifndef OCC_FILE
-	$(error OCC_FILE is not set. Usage: make fulltext_occ_group OCC_FILE=occupations/engineering.tsv)
-endif
-	$(MAKE) $(OCC_GROUP_FULLTEXT_TSV)
 
 # Q5 humans with no matched occupation — produced in the same GZ pass as fulltext_occ_groups
 FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).tsv
@@ -763,13 +721,13 @@ FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-un
 # -----------------------
 
 # Build QID → "other" map from P31_other.subjects.tsv
-$(FULLTEXT_P31_OTHER_MAP): $(SUBJECTS_DONE) | $(WORK_DIR)
+$(P31_OTHER_MAP): $(SUBJECTS_DONE) | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $(SUBJECTS_DIR)/P31_other.subjects.tsv \
 	  | awk '{print $$1 "\tother"}' > $@
 
-$(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP)
+$(P31_OTHER_DONE): $(FULLTEXT_GZ) $(P31_OTHER_MAP)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
-	  --map     $(FULLTEXT_P31_OTHER_MAP) \
+	  --map     $(P31_OTHER_MAP) \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_DIR) \
 	  --date    $(RUN_DATE) \
@@ -777,7 +735,7 @@ $(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP)
 	  --groups  other
 	@touch $@
 
-$(FULLTEXT_P31_OTHER_TSV): $(FULLTEXT_P31_OTHER_DONE) ;
+$(FULLTEXT_P31_OTHER_TSV): $(P31_OTHER_DONE) ;
 
 # -----------------------
 # Per-occupation-QID fulltext TSVs
@@ -785,7 +743,7 @@ $(FULLTEXT_P31_OTHER_TSV): $(FULLTEXT_P31_OTHER_DONE) ;
 # -----------------------
 
 # Build human-QID → occupation-QID mapping from per-QID subject files
-$(FULLTEXT_OCC_QID_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
+$(OCC_QID_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
 	@echo "Building occupation QID fulltext map..."
 	@while IFS= read -r qid; do \
 	    f="$(SUBJECTS_DIR)/$${qid}_subjects.tsv"; \
@@ -795,9 +753,9 @@ $(FULLTEXT_OCC_QID_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
 	done < $(ACTIVE_OCC_QIDS_FILE) | LC_ALL=C sort -u > $@
 
 # Single pass through fulltext GZ: one TSV per occupation QID.
-$(FULLTEXT_OCC_QIDS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_QID_MAP) $(ACTIVE_OCC_QIDS_FILE) | $(FULLTEXT_OCC_QIDS_DIR)
+$(OCC_QIDS_DONE): $(FULLTEXT_GZ) $(OCC_QID_MAP) $(ACTIVE_OCC_QIDS_FILE) | $(FULLTEXT_OCC_QIDS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
-	  --map     $(FULLTEXT_OCC_QID_MAP) \
+	  --map     $(OCC_QID_MAP) \
 	  --gz      $(FULLTEXT_GZ) \
 	  --out-dir $(FULLTEXT_OCC_QIDS_DIR) \
 	  --date    $(RUN_DATE) \
@@ -806,10 +764,10 @@ $(FULLTEXT_OCC_QIDS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_OCC_QID_MAP) $(ACTIVE_OCC_Q
 	@touch $@
 
 # Claim per-occ-QID fulltext TSVs as outputs of the split
-$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_OCC_QIDS_DONE) ;
+$(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(OCC_QIDS_DONE) ;
 
 # All occupation QID fulltext files
-fulltext_occ_qids: $(FULLTEXT_OCC_QIDS_DONE)
+fulltext_occ_qids: $(OCC_QIDS_DONE)
 
 
 
