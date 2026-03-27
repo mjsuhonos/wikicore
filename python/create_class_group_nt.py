@@ -11,11 +11,6 @@ def create_class_group_nt(class_name, skos_dir, output_dir, locale="en"):
     """Create a class group .nt file by combining SKOS files."""
     # Read class TSV file
     class_file = f"classes/{class_name}.tsv"
-    if not os.path.exists(class_file):
-        print(f"Warning: Class file {class_file} not found")
-        return
-    
-    # Get all QIDs for this class
     with open(class_file, 'r') as f:
         qids = [line.strip().split()[0] for line in f if line.strip()]
     
@@ -31,14 +26,11 @@ def create_class_group_nt(class_name, skos_dir, output_dir, locale="en"):
     output_file = f"{output_dir}/wikicore-{os.environ.get('RUN_DATE', 'unknown')}-{class_name}-{locale}.nt"
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
-    if skos_files:
-        with open(output_file, 'w') as out_f:
-            for skos_file in skos_files:
-                with open(skos_file, 'r') as in_f:
-                    out_f.write(in_f.read())
-        print(f"Generated {output_file}")
-    else:
-        print(f"Warning: No SKOS files found for class group {class_name}")
+    with open(output_file, 'w') as out_f:
+        for skos_file in skos_files:
+            with open(skos_file, 'r') as in_f:
+                out_f.write(in_f.read())
+    print(f"Generated {output_file}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:

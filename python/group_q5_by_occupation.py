@@ -15,8 +15,6 @@ from collections import defaultdict
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--core-only', action='store_true',
-                    help='Only create files needed for core processing (skip per-QID subject files)')
 parser.add_argument('nt_file', nargs='?', default="working.nosync/wikidata-P106-sitelinks.nt",
                     help='NT file to process (default: working.nosync/wikidata-P106-sitelinks.nt)')
 args = parser.parse_args()
@@ -122,28 +120,24 @@ with open(other_path, "w") as f:
         other_count += 1
 
 # Write per-QID subject files (sorted, replaces per-QID grep in Makefile)
-# Only create these if not in core-only mode
-if not args.core_only:
-    qid_count = 0
-    for occ_qid, occ_subjs in qid_subjects.items():
-        path = os.path.join(OUTPUT_DIR, f"{occ_qid}_subjects.tsv")
-        with open(path, "w") as f:
-            for subj_uri in sorted(occ_subjs):
-                f.write(subj_uri + "\n")
-        qid_count += 1
+qid_count = 0
+for occ_qid, occ_subjs in qid_subjects.items():
+    path = os.path.join(OUTPUT_DIR, f"{occ_qid}_subjects.tsv")
+    with open(path, "w") as f:
+        for subj_uri in sorted(occ_subjs):
+            f.write(subj_uri + "\n")
+    qid_count += 1
 
-    print(f"Wrote {qid_count} per-QID subject files")
-    
-    # Write manifest of active occupation QIDs (only those with ≥1 subject),
-    # so the Makefile can filter build targets rather than attempting to process
-    # QIDs that have no Q5 humans in the data.
-    active_qids_path = os.path.join(os.path.dirname(OUTPUT_DIR), "active_occ_qids.txt")
-    with open(active_qids_path, "w") as f:
-        for occ_qid in sorted(qid_subjects.keys()):
-            f.write(occ_qid + "\n")
-    print(f"Wrote active QID manifest: {active_qids_path}")
-else:
-    print("Skipped per-QID subject files (core-only mode)")
+print(f"Wrote {qid_count} per-QID subject files")
+
+# Write manifest of active occupation QIDs (only those with ≥1 subject),
+# so the Makefile can filter build targets rather than attempting to process
+# QIDs that have no Q5 humans in the data.
+active_qids_path = os.path.join(os.path.dirname(OUTPUT_DIR), "active_occ_qids.txt")
+with open(active_qids_path, "w") as f:
+    for occ_qid in sorted(qid_subjects.keys()):
+        f.write(occ_qid + "\n")
+print(f"Wrote active QID manifest: {active_qids_path}")
 
 print("\nResults:")
 for group in groups:
