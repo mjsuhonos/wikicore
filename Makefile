@@ -176,36 +176,25 @@ ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GRO
 
 skos_core: $(FINAL_CORE_NT)
 
-# Core-only version of Q5 occupation grouping (skips per-QID subject files)
-Q5_OCC_GROUPED_CORE := $(SUBJECTS_DIR)/.q5_occupation_grouped_core
 
-$(Q5_OCC_GROUPED_CORE): $(CORE_PROPS_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
-	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py --core-only <(rg -F '/prop/direct/P106>' $(CORE_PROPS_NT))
-	@touch $@
 
-# Q5_unmatched_subjects.tsv is claimed as output below (after both core and full versions are defined)
+# Group Q5 humans by occupation (creates per-QID subject files)
+Q5_OCC_GROUPED := $(SUBJECTS_DIR)/.q5_occupation_grouped
 
-# Full version of Q5 occupation grouping (creates per-QID subject files)
-Q5_OCC_GROUPED_FULL := $(Q5_OCC_GROUPED)
-Q5_OCC_GROUPED := $(Q5_OCC_GROUPED_FULL)
-
-$(Q5_OCC_GROUPED_FULL): $(CORE_PROPS_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
+$(Q5_OCC_GROUPED): $(CORE_PROPS_NT) $(Q5_SUBJECTS_FILE) $(ALL_OCC_FILES) $(SUBJECTS_DONE) | $(SUBJECTS_DIR)
 	python3 $(ROOT_DIR)/python/group_q5_by_occupation.py <(rg -F '/prop/direct/P106>' $(CORE_PROPS_NT))
 	@touch $@
 
-# Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED_FULL
-$(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED_FULL) ;
+# Per-occupation-QID subject files are generated as a side effect of Q5_OCC_GROUPED
+$(foreach Q,$(ALL_OCC_QIDS),$(SUBJECTS_DIR)/$(Q)_subjects.tsv): $(Q5_OCC_GROUPED) ;
 
 # active_occ_qids.txt is also written as a side effect of group_q5_by_occupation.py
-$(ACTIVE_OCC_QIDS_FILE): $(Q5_OCC_GROUPED_FULL) ;
-
-# Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
-# The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
+$(ACTIVE_OCC_QIDS_FILE): $(Q5_OCC_GROUPED) ;
 
 skos_class_qids: $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(CLASS_QIDS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done
+skos_occ_qids: $(Q5_OCC_GROUPED) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
 	  $(MAKE) -j $(JOBS) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
@@ -215,7 +204,7 @@ skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(W
 skos_class_groups: $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(CLASS_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_GROUP_NTS)
 
-skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(OCC_GROUPS_DIR)
+skos_occ_groups: $(Q5_OCC_GROUPED) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
 skos: skos_core skos_class_groups skos_occ_groups $(UNMATCHED_OCC_NT) $(FINAL_P31_OTHER_NT)
@@ -300,7 +289,6 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 # -----------------------
 
 # Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
-# NOTE: $(CORE_QIDS) prevents race condition with parallel SUBJECTS_DONE
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(WORK_DIR)/.core_qids_done
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
 	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
@@ -342,7 +330,7 @@ $(SKOS_LABELS_NT):
 	  pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@; \
 	fi
 
-$(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(WORK_DIR)/.core_qids_done $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
+$(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(WORK_DIR)/.core_qids_done $(Q5_OCC_GROUPED) | $(SKOS_DIR)
 	python3 $(ROOT_DIR)/python/route_labels.py \
 	  --labels   $(SKOS_LABELS_NT) \
 	  --subjects $(SUBJECTS_DIR) \
@@ -450,7 +438,7 @@ endef
 # Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
 define OCC_RULE
 $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
-    $(Q5_OCC_GROUPED_FULL) \
+    $(Q5_OCC_GROUPED) \
     $(SKOS_DIR)/skos_Q5_$(1)_concepts.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_concept_scheme.nt \
     $(SKOS_DIR)/skos_Q5_$(1)_labels_$(LOCALE).nt \
@@ -472,11 +460,11 @@ $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 UNMATCHED_OCC_NT    := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
 FINAL_P31_OTHER_NT  := $(OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
 
-# Claim Q5_unmatched_subjects.tsv as output of both core and full versions
-$(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED_CORE) $(Q5_OCC_GROUPED_FULL) ;
+# Claim Q5_unmatched_subjects.tsv as output of Q5_OCC_GROUPED
+$(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED) ;
 
 $(UNMATCHED_OCC_NT): \
-    $(Q5_OCC_GROUPED_FULL) \
+    $(Q5_OCC_GROUPED) \
     $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt \
     $(SKOS_DIR)/skos_Q5_unmatched_concept_scheme.nt \
     $(SKOS_DIR)/skos_Q5_unmatched_labels_$(LOCALE).nt \
@@ -680,7 +668,7 @@ $(CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WO
 # -----------------------
 
 # Build human-QID → group-name mapping from Q5_*_subjects.tsv files
-$(OCC_GROUP_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
+$(OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 	@echo "Building occupation group fulltext QID map..."
 	@for occ in $(ALL_OCC_WITH_UNMATCHED); do \
 	    f="$(SUBJECTS_DIR)/Q5_$${occ}_subjects.tsv"; \
@@ -743,7 +731,7 @@ $(FULLTEXT_P31_OTHER_TSV): $(P31_OTHER_DONE) ;
 # -----------------------
 
 # Build human-QID → occupation-QID mapping from per-QID subject files
-$(OCC_QID_MAP): $(Q5_OCC_GROUPED_FULL) | $(WORK_DIR)
+$(OCC_QID_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 	@echo "Building occupation QID fulltext map..."
 	@while IFS= read -r qid; do \
 	    f="$(SUBJECTS_DIR)/$${qid}_subjects.tsv"; \
