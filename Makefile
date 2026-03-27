@@ -6,13 +6,11 @@ SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 .PHONY: all skos fulltext \
         skos_core skos_class_qids skos_class_groups skos_occ_qids skos_occ_groups \
-        skos_class_qid skos_class_group skos_occ_qid skos_occ_group skos_occ_unmatched \
-        classes_combined occupations_combined \
+        skos_class_group skos_occ_group \
         turtle clean help \
-        fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_qid fulltext_class_group \
-        fulltext_occ_groups fulltext_occ_group fulltext_occ_unmatched \
-        fulltext_occ_qids fulltext_occ_qid \
-        skos_P31_other fulltext_P31_other \
+        fulltext_core fulltext_class_qids fulltext_class_groups fulltext_class_group \
+        fulltext_occ_groups fulltext_occ_group \
+        fulltext_occ_qids \
         annif_projects
 
 help:
@@ -221,9 +219,9 @@ skos_class_groups: $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DON
 skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other
+skos: skos_core skos_class_groups skos_occ_groups $(UNMATCHED_OCC_NT) $(FINAL_P31_OTHER_NT)
 
-fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups fulltext_occ_unmatched fulltext_P31_other
+fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups $(FULLTEXT_OCC_UNMATCHED_TSV) $(FULLTEXT_P31_OTHER_TSV)
 
 all: skos fulltext
 
@@ -356,7 +354,6 @@ $(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(WORK_DIR)/.core_qids
 
 # -----------------------
 # 7. Generate SKOS class QID vocabs
-# eg. make skos_class_qid QIDS="Q5 Q532"
 # -----------------------
 
 
@@ -501,8 +498,6 @@ FINAL_P31_OTHER_NT  := $(OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
 # Claim Q5_unmatched_subjects.tsv as output of both core and full versions
 $(SUBJECTS_DIR)/Q5_unmatched_subjects.tsv: $(Q5_OCC_GROUPED_CORE) $(Q5_OCC_GROUPED_FULL) ;
 
-skos_occ_unmatched: $(UNMATCHED_OCC_NT)
-
 $(UNMATCHED_OCC_NT): \
     $(Q5_OCC_GROUPED_FULL) \
     $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt \
@@ -520,8 +515,6 @@ $(UNMATCHED_OCC_NT): \
 # 9c. Generate SKOS for P31_other (entities with unrecognized P31 values)
 # eg. make skos_P31_other
 # -----------------------
-
-skos_P31_other: $(FINAL_P31_OTHER_NT)
 
 # Explicit rules for P31_other SKOS files to ensure SUBJECTS_DONE completes first
 $(SKOS_DIR)/skos_P31_other_concepts.nt: $(SUBJECTS_DONE) | $(SKOS_DIR)
@@ -550,7 +543,6 @@ $(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.conce
 
 # -----------------------
 # 10. Generate SKOS for Q5 humans by occupation QID
-# eg. make skos_occ_qid QID=Q7888586
 # -----------------------
 
 
@@ -623,7 +615,6 @@ fulltext_core: $(FULLTEXT_CORE_TSV)
 # Class domain fulltext
 # eg. make fulltext_class_qids
 #     make fulltext_class_groups
-#     make fulltext_class_qid QIDS='Q5 Q532'
 #     make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
 # -----------------------
 
@@ -766,8 +757,6 @@ endif
 # Q5 humans with no matched occupation — produced in the same GZ pass as fulltext_occ_groups
 FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).tsv
 
-fulltext_occ_unmatched: $(FULLTEXT_OCC_UNMATCHED_TSV)
-
 # -----------------------
 # P31_other fulltext
 # eg. make fulltext_P31_other
@@ -789,8 +778,6 @@ $(FULLTEXT_P31_OTHER_DONE): $(FULLTEXT_GZ) $(FULLTEXT_P31_OTHER_MAP)
 	@touch $@
 
 $(FULLTEXT_P31_OTHER_TSV): $(FULLTEXT_P31_OTHER_DONE) ;
-
-fulltext_P31_other: $(FULLTEXT_P31_OTHER_TSV)
 
 # -----------------------
 # Per-occupation-QID fulltext TSVs
