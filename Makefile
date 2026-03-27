@@ -499,7 +499,7 @@ clean:
 # Core vocabulary fulltext
 
 # Build core QID → "core" group map from core_subjects.tsv (URI format)
-$(CORE_MAP): $(WORK_DIR)/.core_qids_done | $(WORK_DIR)
+$(CORE_MAP): $(CORE_QIDS) | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $< \
 	  | awk '{print $$1 "\tcore"}' > $@
 
