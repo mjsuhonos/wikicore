@@ -1,6 +1,4 @@
-# -----------------------
 # Wiki Core processing pipeline
-# -----------------------
 
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
@@ -46,17 +44,13 @@ help:
 	@echo "  JOBS=<n>        Parallel jobs (default: nproc)"
 	@echo ""
 
-# -----------------------
 # Options
-# -----------------------
 LOCALE ?= en
 JOBS ?= $(shell nproc)
 RUN_DATE := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 
-# -----------------------
 # Paths
-# -----------------------
 ROOT_DIR         := $(PWD)
 SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
@@ -71,7 +65,6 @@ CLASS_GROUPS_DIR := $(OUT_DIR)/classes
 OCC_QIDS_DIR     := $(OUT_DIR)/occupations/qids
 OCC_GROUPS_DIR   := $(OUT_DIR)/occupations
 
-
 # Fulltext output directories
 FULLTEXT_DIR              := $(OUT_DIR)/fulltext
 FULLTEXT_CLASS_QIDS_DIR   := $(FULLTEXT_DIR)/classes/qids
@@ -79,16 +72,11 @@ FULLTEXT_CLASS_GROUPS_DIR := $(FULLTEXT_DIR)/classes
 FULLTEXT_OCC_GROUPS_DIR   := $(FULLTEXT_DIR)/occupations
 FULLTEXT_OCC_QIDS_DIR     := $(FULLTEXT_DIR)/occupations/qids
 
-
-# -----------------------
 # Inputs
-# -----------------------
 CLEANED_GZ       := $(SOURCE_DIR)/wikidata-20251229-cleaned.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 
-# -----------------------
 # Working files
-# -----------------------
 SITELINKS_FILE        := $(WORK_DIR)/sitelinks_en_qids.tsv
 SKOS_DIR              := $(WORK_DIR)/skos
 SPLIT_DIR             := $(WORK_DIR)/splits
@@ -117,38 +105,32 @@ CLASS_GROUPS_DONE          := $(WORK_DIR)/.class_groups_done
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
 FULLTEXT_P31_OTHER_TSV     := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).tsv
 
-# -----------------------
 # Core files
-# -----------------------
+
 CONCEPT_BACKBONE    := $(WORK_DIR)/concept_backbone.nt
 CORE_PROPS_NT       := $(SOURCE_DIR)/wikidata-core-properties.nt
 SKOS_LABELS_NT      := $(SOURCE_DIR)/wikidata-skos-labels-$(LOCALE).nt
 CORE_QIDS           := $(SUBJECTS_DIR)/core_subjects.tsv
 
-# -----------------------
 # P106 (occupation) files
-# -----------------------
+
 Q5_SUBJECTS_FILE     := $(SUBJECTS_DIR)/Q5_subjects.tsv
 Q5_OCC_GROUPED       := $(SUBJECTS_DIR)/.q5_occupation_grouped
 OCC_QIDS_FILE        := $(WORK_DIR)/occ_qids.txt
 ACTIVE_OCC_QIDS_FILE := $(WORK_DIR)/active_occ_qids.txt
 
-# -----------------------
 # RDF / SKOS URIs
-# -----------------------
+
 RDF_TYPE_URI        = http://www.w3.org/1999/02/22-rdf-syntax-ns\#type
 SKOS_CONCEPT_URI    = http://www.w3.org/2004/02/skos/core\#Concept
 SKOS_BROADER_URI    = http://www.w3.org/2004/02/skos/core\#broader
 SKOS_CONCEPT_SCHEME_URI = http://www.w3.org/2004/02/skos/core\#ConceptScheme
 SKOS_INSCHEME_URI     = http://www.w3.org/2004/02/skos/core\#inScheme
 
-# ----------------------------------------------
-#                MAIN STARTS HERE
-# ----------------------------------------------
+# Main targets
 
-# -----------------------
 # Default target
-# -----------------------
+
 FINAL_CORE_NT       := $(OUT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).nt
 
 # All class TSV files and their derived targets
@@ -175,8 +157,6 @@ ALL_CLASS_QIDS_FULLTEXT   := $(foreach Q,$(ALL_CLASS_QIDS),$(FULLTEXT_CLASS_QIDS
 ALL_CLASS_GROUPS_FULLTEXT := $(foreach C,$(ALL_CLASS_NAMES),$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(C)-$(LOCALE).tsv)
 
 skos_core: $(FINAL_CORE_NT)
-
-
 
 # Group Q5 humans by occupation (creates per-QID subject files)
 Q5_OCC_GROUPED := $(SUBJECTS_DIR)/.q5_occupation_grouped
@@ -207,39 +187,34 @@ skos_class_groups: $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DON
 skos_occ_groups: $(Q5_OCC_GROUPED) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_groups skos_occ_groups $(UNMATCHED_OCC_NT) $(FINAL_P31_OTHER_NT)
+skos: skos_core skos_class_groups skos_occ_groups $(UNMATCHED_OCC_NT) $(FINAL_P31_OTHER_NT) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done $(SKOS_DIR)/skos_Q5_unmatched_concepts.nt $(SKOS_DIR)/skos_Q5_unmatched_concept_scheme.nt $(SKOS_DIR)/skos_Q5_unmatched_broader.nt $(SKOS_DIR)/skos_P31_other_concepts.nt $(SKOS_DIR)/skos_P31_other_concept_scheme.nt $(SKOS_DIR)/skos_P31_other_broader.nt
 
 fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups $(FULLTEXT_OCC_UNMATCHED_TSV) $(FULLTEXT_P31_OTHER_TSV)
 
 all: skos fulltext
 
-# -----------------------
 # Directories (main targets)
-# -----------------------
+
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
 $(OUT_DIR) $(CLASS_GROUPS_DIR) $(OCC_GROUPS_DIR) \
 $(FULLTEXT_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
 $(FULLTEXT_OCC_GROUPS_DIR):
 	mkdir -p $@
 
-# -----------------------
 # Directories (per-QID targets only)
-# -----------------------
+
 $(CLASS_QIDS_DIR) $(OCC_QIDS_DIR) \
 $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
 	mkdir -p $@
 
-# -----------------------
-# 0. Extract QIDs from sitelinks (first column of sitelinks_en.tsv.gz)
-# -----------------------
+# Extract QIDs from sitelinks (first column of sitelinks_en.tsv.gz)
+
 $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR)
 	pigz -dc $< | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
-# -----------------------
-# 1. Extract core properties and P106 in a single decompression pass
-# -----------------------
+# Extract core properties and P106 in a single decompression pass
 
-# Direct rule for core properties extraction (includes P106)
+# Core properties extraction
 # This replaces the CORE_EXTRACT_DONE sentinel with direct file dependencies
 $(CORE_PROPS_NT): 
 	@if [ ! -f $@ ]; then \
@@ -257,21 +232,19 @@ $(Q5_SUBJECTS_FILE): $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 	  | awk '{print $$1}' \
 	  | LC_ALL=C sort -u > $@
 
-# -----------------------
-# 2. Split + partition core properties
-# -----------------------
+# Split + partition core properties
+
 SPLIT_DONE := $(SPLIT_DIR)/.split_done
 
 $(SPLIT_DONE): $(CORE_PROPS_NT) | $(SPLIT_DIR)
 	split -l $$(( ($$(wc -l < $(CORE_PROPS_NT)) + $(JOBS) - 1) / $(JOBS) )) $(CORE_PROPS_NT) $(SPLIT_DIR)/chunk_
 	@touch $@
 
-# Merge class and occupation names so partition_chunks routes occupation QIDs
-# into their own per-QID subjects files (rather than P31_other)
+# Merge class and occupation names
 $(OCC_NAMES_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
 	cat $(ALL_OCC_FILES) > $@
 
-# Create list of occupation QIDs for concept_scheme rule
+# Create list of occupation QIDs
 $(OCC_QIDS_FILE): $(ALL_OCC_FILES) | $(WORK_DIR)
 	cat $(ALL_OCC_FILES) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
@@ -284,11 +257,9 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 	  parallel -j $(JOBS) --bar --halt now,fail=1 \
 	    'python3 $(ROOT_DIR)/python/partition_chunks.py {} $(ALL_NAMES_FILE) $(WORK_DIR) $(SUBJECTS_DIR)'
 
-# -----------------------
-# 3. Prepare subject vocabularies
-# -----------------------
+# Prepare subject vocabularies
 
-# Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
+# Sort and deduplicate per-subject TSVs
 $(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(WORK_DIR)/.core_qids_done
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
 	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
@@ -303,15 +274,12 @@ $(SUBJECTS_SORTED): $(SUBJECTS_DONE)
 	LC_ALL=C sort -m -u $(SUBJECTS_DIR)/*subjects.tsv \
 	 > $@
 
-# -----------------------
-# 3b. Group Q5 humans by occupation
-# -----------------------
+# Group Q5 humans by occupation
 
-# Note: Q5_OCC_GROUPED targets defined above in core and full versions
+# Q5_OCC_GROUPED targets defined above
 
-# -----------------------
-# 4. Extract core concepts using file operations
-# -----------------------
+# Extract core concepts using file operations
+
 $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 	LC_ALL=C comm -23 \
 	  <(rg -F -e 'P279>' -e 'P361>' $(CONCEPT_BACKBONE) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
@@ -322,9 +290,8 @@ $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 $(WORK_DIR)/.core_qids_done: $(CORE_QIDS)
 	@touch $@
 
-# -----------------------
-# 6. Extract and split localized labels
-# -----------------------
+# Extract and split localized labels
+
 $(SKOS_LABELS_NT): 
 	@if [ ! -f $@ ]; then \
 	  pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@; \
@@ -339,11 +306,7 @@ $(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(WORK_DIR)/.core_qids
 	  --sort-workers $(JOBS)
 	@touch $@
 
-# -----------------------
-# 7. Generate SKOS class QID vocabs
-# -----------------------
-
-
+# Generate SKOS class QID vocabs
 
 .PRECIOUS: $(SKOS_DIR)/skos_%_concepts.nt \
            $(SKOS_DIR)/skos_%_concept_scheme.nt \
@@ -411,11 +374,9 @@ $(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).nt: \
 	$(SKOS_DIR)/skos_%_broader.nt | $(OCC_QIDS_DIR)
 	cat $^ > $@
 
-# -----------------------
-# 8. Generate SKOS vocab from a classes/ TSV
-# -----------------------
+# Generate SKOS vocab from a classes/ TSV
 
-# Per-class combined NTs — one rule per classes/*.tsv
+# Per-class combined NTs
 # Generate directly from component files without requiring individual QID files
 define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
@@ -429,13 +390,10 @@ $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
 endef
 # $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
-# -----------------------
-# 9. Generate SKOS vocabs from occupations/ TSVs
+# Generate SKOS vocabs from occupations/ TSVs
 # Each occupation generates SKOS about Q5 (human) entities that have that occupation
-# -----------------------
 
-# Per-occupation combined NTs — one rule per occupations/*.tsv
-# Generates SKOS from Q5_{occupation}_subjects.tsv files created by group_q5_by_occupation.py
+# Per-occupation combined NTs
 define OCC_RULE
 $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $(Q5_OCC_GROUPED) \
@@ -452,10 +410,7 @@ $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
 endef
 $(foreach O,$(ALL_OCC_NAMES),$(eval $(call OCC_RULE,$(O))))
 
-# -----------------------
-# 9b. Generate SKOS for Q5 humans with no matched occupation
-# eg. make skos_occ_unmatched
-# -----------------------
+# Generate SKOS for Q5 humans with no matched occupation
 
 UNMATCHED_OCC_NT    := $(OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).nt
 FINAL_P31_OTHER_NT  := $(OUT_DIR)/wikicore-$(RUN_DATE)-other-$(LOCALE).nt
@@ -476,12 +431,9 @@ $(UNMATCHED_OCC_NT): \
 	    > $@
 	@echo "Generated $@"
 
-# -----------------------
-# 9c. Generate SKOS for P31_other (entities with unrecognized P31 values)
-# eg. make skos_P31_other
-# -----------------------
+# Generate SKOS for P31_other
 
-# Explicit rules for P31_other SKOS files to ensure SUBJECTS_DONE completes first
+# Explicit rules for P31_other SKOS files
 $(SKOS_DIR)/skos_P31_other_concepts.nt: $(SUBJECTS_DONE) | $(SKOS_DIR)
 	awk -v type="$(RDF_TYPE_URI)" -v concept="$(SKOS_CONCEPT_URI)" \
 	  '!seen[$$1]++ { print $$1, "<" type ">", "<" concept ">", "." }' $(SUBJECTS_DIR)/P31_other.subjects.tsv > $@
@@ -506,15 +458,10 @@ $(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.conce
 	@echo "Generated $@"
 	@echo "Generated $@"
 
-# -----------------------
 # 10. Generate SKOS for Q5 humans by occupation QID
-# -----------------------
 
-
-
-# -----------------------
 # Convert .nt files to compressed Turtle
-# -----------------------
+
 TURTLE_GZS := $(FINAL_CORE_NT:.nt=.ttl.gz) \
               $(ALL_CLASS_GROUP_NTS:.nt=.ttl.gz) \
               $(ALL_OCC_GROUP_NTS:.nt=.ttl.gz) \
@@ -530,14 +477,12 @@ PIGZ_JOBS := $(shell echo $$(( $(JOBS) > 4 ? 4 : $(JOBS) )))
 
 turtle: $(TURTLE_GZS)
 
-# -----------------------
 # Extract initial .nt files
-# -----------------------
+
 extract: $(CORE_PROPS_NT) $(SKOS_LABELS_NT)
 
-# -----------------------
 # Clean
-# -----------------------
+
 clean:
 	rm -rf $(WORK_DIR)
 
@@ -551,17 +496,14 @@ clean:
 # Output format per line: text<TAB><http://www.wikidata.org/entity/Q###>
 # ===========================================================
 
-# -----------------------
 # Core vocabulary fulltext
-# eg. make fulltext_core
-# -----------------------
 
 # Build core QID → "core" group map from core_subjects.tsv (URI format)
 $(CORE_MAP): $(WORK_DIR)/.core_qids_done | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $< \
 	  | awk '{print $$1 "\tcore"}' > $@
 
-# Single pass through fulltext GZ for all core concept QIDs
+# Single pass fulltext processing for all core concept QIDs
 $(CORE_DONE): $(FULLTEXT_GZ) $(CORE_MAP) | $(FULLTEXT_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
 	  --map     $(CORE_MAP) \
@@ -576,11 +518,7 @@ $(FULLTEXT_CORE_TSV): $(CORE_DONE) ;
 
 fulltext_core: $(FULLTEXT_CORE_TSV)
 
-# -----------------------
 # Class domain fulltext
-# eg. make fulltext_class_qids
-
-# -----------------------
 
 # Collect all class QIDs across all classes/ TSVs
 $(CLASS_QIDS_FILE): $(ALL_CLASS_FILES) | $(WORK_DIR)
@@ -605,7 +543,7 @@ $(CLASS_INSTANCE_MAP): $(SPLIT_DONE) $(CLASS_QIDS_FILE) | $(WORK_DIR)
 	   | LC_ALL=C sort -u --parallel=$(JOBS) \
 	   > $@
 
-# Single pass through fulltext GZ: one TSV per class QID containing text from all instances.
+# Single pass fulltext processing: one TSV per class QID containing text from all instances.
 # QIDs with no fulltext entry are touched (empty file) so group cat rules never fail.
 $(CLASS_SPLIT_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(CLASS_QIDS_FILE) $(ALL_CLASS_FILES) | $(FULLTEXT_CLASS_QIDS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py classes \
@@ -624,8 +562,6 @@ $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(CLASS_SPLIT_D
 # All class QID fulltext files
 fulltext_class_qids: $(CLASS_SPLIT_DONE)
 
-
-
 # Per-class-group fulltext files are now generated by the single-pass split_fulltext.py
 # The individual rules are kept as placeholders but the actual generation is done by CLASS_GROUPS_DONE
 $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(CLASS_GROUPS_DONE)
@@ -643,7 +579,7 @@ $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 fulltext_class_groups: $(CLASS_GROUPS_DONE)
 
 $(CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(FULLTEXT_CLASS_GROUPS_DIR)
-	# Single pass through fulltext GZ: one TSV per class group.
+	# Single pass fulltext processing: one TSV per class group.
 	# This is much more memory-efficient than running split_fulltext_for_group.py for each class.
 	@echo "Generating all fulltext class groups in single pass..."
 	python3 $(ROOT_DIR)/python/split_fulltext.py class_groups \
@@ -655,17 +591,10 @@ $(CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WO
 	  --locale  $(LOCALE)
 	@touch $@
 
-
-# -----------------------
 # Occupation domain fulltext
-# eg. make fulltext_occ_groups
+
 #
-# Source QIDs come from the subjects/ working files (URI format) created by
-# group_q5_by_occupation.py:
-#   Q5_{group}_subjects.tsv  — people in each occupation group
-# URIs are stripped to plain QIDs for matching against the fulltext GZ.
-# People appearing in multiple groups are written to each group file.
-# -----------------------
+# Source QIDs from subjects/ working files
 
 # Build human-QID → group-name mapping from Q5_*_subjects.tsv files
 $(OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
@@ -677,7 +606,7 @@ $(OCC_GROUP_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 	        | awk -v g="$$occ" '{print $$1 "\t" g}'; \
 	done | LC_ALL=C sort -u > $@
 
-# Single pass through fulltext GZ: one TSV per occupation group.
+# Single pass fulltext processing: one TSV per occupation group.
 # A person in multiple groups is written to each group file.
 $(OCC_GROUPS_DONE): $(FULLTEXT_GZ) $(OCC_GROUP_MAP) | $(FULLTEXT_OCC_GROUPS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
@@ -703,10 +632,7 @@ fulltext_occ_groups: $(ALL_OCC_GROUPS_FULLTEXT)
 # Q5 humans with no matched occupation — produced in the same GZ pass as fulltext_occ_groups
 FULLTEXT_OCC_UNMATCHED_TSV := $(FULLTEXT_OCC_GROUPS_DIR)/wikicore-$(RUN_DATE)-unmatched-$(LOCALE).tsv
 
-# -----------------------
 # P31_other fulltext
-# eg. make fulltext_P31_other
-# -----------------------
 
 # Build QID → "other" map from P31_other.subjects.tsv
 $(P31_OTHER_MAP): $(SUBJECTS_DONE) | $(WORK_DIR)
@@ -725,10 +651,8 @@ $(P31_OTHER_DONE): $(FULLTEXT_GZ) $(P31_OTHER_MAP)
 
 $(FULLTEXT_P31_OTHER_TSV): $(P31_OTHER_DONE) ;
 
-# -----------------------
 # Per-occupation-QID fulltext TSVs
 # One TSV per active occupation QID, analogous to fulltext/classes/qids/
-# -----------------------
 
 # Build human-QID → occupation-QID mapping from per-QID subject files
 $(OCC_QID_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
@@ -740,7 +664,7 @@ $(OCC_QID_MAP): $(Q5_OCC_GROUPED) | $(WORK_DIR)
 	        | awk -v q="$$qid" '{print $$1 "\t" q}'; \
 	done < $(ACTIVE_OCC_QIDS_FILE) | LC_ALL=C sort -u > $@
 
-# Single pass through fulltext GZ: one TSV per occupation QID.
+# Single pass fulltext processing: one TSV per occupation QID.
 $(OCC_QIDS_DONE): $(FULLTEXT_GZ) $(OCC_QID_MAP) $(ACTIVE_OCC_QIDS_FILE) | $(FULLTEXT_OCC_QIDS_DIR)
 	python3 $(ROOT_DIR)/python/split_fulltext.py occs \
 	  --map     $(OCC_QID_MAP) \
@@ -757,14 +681,9 @@ $(FULLTEXT_OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(OCC_QIDS_DONE) 
 # All occupation QID fulltext files
 fulltext_occ_qids: $(OCC_QIDS_DONE)
 
-
-
-# -----------------------
 # Annif project files
-# -----------------------
+
 ANNIF_DIR := $(ROOT_DIR)/annif
-
-
 
 annif_projects: | $(ANNIF_DIR)
 	python3 $(ROOT_DIR)/python/generate_annif_projects.py \
@@ -778,17 +697,15 @@ annif_projects: | $(ANNIF_DIR)
 $(ANNIF_DIR):
 	mkdir -p $@
 
-# -----------------------
 # Fulltext splits for training/evaluation
-# -----------------------
+
 fulltext_splits:
 	python3 $(ROOT_DIR)/python/create_fulltext_splits.py --locale $(LOCALE) --fulltext-dir $(FULLTEXT_DIR)
 $(FULLTEXT_SPLITS_DIR):
 	mkdir -p $@
 
-# -----------------------
 # Annif training and evaluation
-# -----------------------
+
 annif_script: fulltext_splits annif_projects
 	python3 $(ROOT_DIR)/python/generate_annif_commands.py \
 	  --date $(RUN_DATE) \
