@@ -114,6 +114,7 @@ FULLTEXT_OCC_QID_MAP      := $(WORK_DIR)/fulltext_occ_qid_map.tsv
 FULLTEXT_OCC_QIDS_DONE    := $(WORK_DIR)/.fulltext_occ_qids_done
 FULLTEXT_P31_OTHER_MAP    := $(WORK_DIR)/fulltext_p31_other_map.tsv
 FULLTEXT_P31_OTHER_DONE   := $(WORK_DIR)/.fulltext_p31_other_done
+FULLTEXT_CLASS_GROUPS_DONE := $(WORK_DIR)/.fulltext_class_groups_done
 
 # Fulltext output files
 FULLTEXT_CORE_TSV          := $(FULLTEXT_DIR)/wikicore-$(RUN_DATE)-core-$(LOCALE).tsv
@@ -204,35 +205,42 @@ $(ACTIVE_OCC_QIDS_FILE): $(Q5_OCC_GROUPED_FULL) ;
 # Remove the old Q5_OCC_GROUPED target definition to avoid duplicates
 # The variable Q5_OCC_GROUPED now points to Q5_OCC_GROUPED_FULL
 
-skos_class_qids: $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(CLASS_QIDS_DIR)
+skos_class_qids: $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(CLASS_QIDS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_QIDS_NTS)
 
-skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED)
+skos_occ_qids: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done
 	@if [ -s $(ACTIVE_OCC_QIDS_FILE) ]; then \
 	  $(MAKE) -j $(JOBS) $(foreach Q,$(shell cat $(ACTIVE_OCC_QIDS_FILE)),$(OCC_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).nt); \
 	else \
 	  echo "Warning: no active occupation QIDs found in $(ACTIVE_OCC_QIDS_FILE)"; \
 	fi
 
-skos_class_groups: skos_class_qids | $(CLASS_GROUPS_DIR)
+skos_class_groups: $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(CLASS_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_CLASS_GROUP_NTS)
 
-skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) | $(OCC_GROUPS_DIR)
+skos_occ_groups: $(Q5_OCC_GROUPED_FULL) $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(OCC_GROUPS_DIR)
 	$(MAKE) -j $(JOBS) $(ALL_OCC_GROUP_NTS)
 
-skos: skos_core skos_class_qids skos_occ_qids skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other classes_combined occupations_combined
+skos: skos_core skos_class_groups skos_occ_groups skos_occ_unmatched skos_P31_other #classes_combined occupations_combined
 
-fulltext: fulltext_core fulltext_class_qids fulltext_occ_qids fulltext_class_groups fulltext_occ_groups fulltext_occ_qids fulltext_occ_unmatched fulltext_P31_other
+fulltext: fulltext_core fulltext_class_groups fulltext_occ_groups fulltext_occ_unmatched fulltext_P31_other
 
 all: skos fulltext
 
 # -----------------------
-# Directories
+# Directories (main targets)
 # -----------------------
 $(WORK_DIR) $(SPLIT_DIR) $(SUBJECTS_DIR) $(SKOS_DIR) \
-$(OUT_DIR) $(CLASS_QIDS_DIR) $(CLASS_GROUPS_DIR) $(OCC_QIDS_DIR) $(OCC_GROUPS_DIR) \
-$(FULLTEXT_DIR) $(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
-$(FULLTEXT_OCC_GROUPS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
+$(OUT_DIR) $(CLASS_GROUPS_DIR) $(OCC_GROUPS_DIR) \
+$(FULLTEXT_DIR) $(FULLTEXT_CLASS_GROUPS_DIR) \
+$(FULLTEXT_OCC_GROUPS_DIR):
+	mkdir -p $@
+
+# -----------------------
+# Directories (per-QID targets only)
+# -----------------------
+$(CLASS_QIDS_DIR) $(OCC_QIDS_DIR) \
+$(FULLTEXT_CLASS_QIDS_DIR) $(FULLTEXT_OCC_QIDS_DIR):
 	mkdir -p $@
 
 # -----------------------
@@ -296,7 +304,7 @@ $(CONCEPT_BACKBONE): $(SPLIT_DONE) $(ALL_NAMES_FILE) | $(SUBJECTS_DIR)
 
 # Sort and deduplicate each per-subject TSV (sitelinks already filtered at extraction)
 # NOTE: $(CORE_QIDS) prevents race condition with parallel SUBJECTS_DONE
-$(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(CORE_QIDS)
+$(SUBJECTS_DONE): $(CONCEPT_BACKBONE) $(WORK_DIR)/.core_qids_done
 	parallel -j $(JOBS) --bar --halt now,fail=1 \
 	  'tmp=$$(mktemp); LC_ALL=C sort -u {1} > "$$tmp" && mv "$$tmp" {1}' \
 	  ::: $(SUBJECTS_DIR)/*subjects.tsv
@@ -325,6 +333,10 @@ $(CORE_QIDS): $(CONCEPT_BACKBONE) $(CORE_PROPS_NT) | $(SUBJECTS_DIR)
 	  <(rg -F 'P31>' $(CORE_PROPS_NT) | awk '{print $$1}' | LC_ALL=C sort -u --parallel=$(JOBS)) \
 	  | LC_ALL=C sort -u > $@
 
+# Sentinel to prevent duplicate execution in parallel builds
+$(WORK_DIR)/.core_qids_done: $(CORE_QIDS)
+	@touch $@
+
 # -----------------------
 # 6. Extract and split localized labels
 # -----------------------
@@ -333,7 +345,7 @@ $(SKOS_LABELS_NT):
 	  pigz -dc $(CLEANED_GZ) | rg 'skos/core#.*"@$(LOCALE) \.' > $@; \
 	fi
 
-$(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(CORE_QIDS) $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
+$(LABELS_ROUTED_DONE): $(SKOS_LABELS_NT) $(SUBJECTS_DONE) $(WORK_DIR)/.core_qids_done $(Q5_OCC_GROUPED_FULL) | $(SKOS_DIR)
 	python3 $(ROOT_DIR)/python/route_labels.py \
 	  --labels   $(SKOS_LABELS_NT) \
 	  --subjects $(SUBJECTS_DIR) \
@@ -390,7 +402,11 @@ $(SKOS_DIR)/skos_%_labels_$(LOCALE).nt: $(LABELS_ROUTED_DONE) ;
 $(CONCEPT_BACKBONE_SORTED): $(CONCEPT_BACKBONE)
 	LC_ALL=C sort -u --parallel=$(JOBS) $< > $@
 
-$(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(CONCEPT_BACKBONE_SORTED) | $(SKOS_DIR)
+# Sentinel to prevent duplicate execution in parallel builds
+$(WORK_DIR)/.concept_backbone_sorted_done: $(CONCEPT_BACKBONE_SORTED)
+	@touch $@
+
+$(SKOS_DIR)/skos_%_broader.nt: $(SUBJECTS_DIR)/%_subjects.tsv $(WORK_DIR)/.concept_backbone_sorted_done $(SUBJECTS_DONE) | $(SKOS_DIR)
 	LC_ALL=C join $(SUBJECTS_DIR)/$*_subjects.tsv $(CONCEPT_BACKBONE_SORTED) \
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
@@ -432,14 +448,18 @@ endif
 	$(MAKE) $(CLASS_NT)
 
 # Per-class combined NTs — one rule per classes/*.tsv (used by skos_class_group and make class_groups)
+# Generate directly from component files without requiring individual QID files
 define CLASS_RULE
 $(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: \
     $$(foreach Q,$$(shell awk '{print $$$$1}' $(ROOT_DIR)/classes/$(1).tsv),\
-      $(CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$$(Q)-$(LOCALE).nt) | $(CLASS_GROUPS_DIR)
-	cat $$^ > $$@
+      $(SKOS_DIR)/skos_$$(Q)_concepts.nt \
+      $(SKOS_DIR)/skos_$$(Q)_concept_scheme.nt \
+      $(SKOS_DIR)/skos_$$(Q)_labels_$(LOCALE).nt \
+      $(SKOS_DIR)/skos_$$(Q)_broader.nt) | $(CLASS_GROUPS_DIR)
+	cat $^ > $@
 	@echo "Generated $$@"
 endef
-$(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
+# $(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 # -----------------------
 # 9. Generate SKOS vocabs from occupations/ TSVs
@@ -519,12 +539,12 @@ $(SKOS_DIR)/skos_P31_other_concept_scheme.nt: $(SUBJECTS_DONE) | $(SKOS_DIR)
 	awk -v inscheme="$(SKOS_INSCHEME_URI)" -v vocab="$$vocab_uri" \
 	  '!seen[$$1]++ { print $$1, "<" inscheme ">", "<" vocab ">", "." }' $(SUBJECTS_DIR)/P31_other.subjects.tsv >> $@
 
-$(SKOS_DIR)/skos_P31_other_broader.nt: $(SUBJECTS_DONE) $(CONCEPT_BACKBONE_SORTED) | $(SKOS_DIR)
+$(SKOS_DIR)/skos_P31_other_broader.nt: $(SUBJECTS_DONE) $(WORK_DIR)/.concept_backbone_sorted_done | $(SKOS_DIR)
 	LC_ALL=C join $(SUBJECTS_DIR)/P31_other.subjects.tsv $(CONCEPT_BACKBONE_SORTED) \
 	  | awk -v broader="$(SKOS_BROADER_URI)" '{ print $$1 " <" broader "> " $$3 " ." }' \
 	  > $@
 
-$(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(CONCEPT_BACKBONE_SORTED) \
+$(FINAL_P31_OTHER_NT): $(SUBJECTS_DONE) $(LABELS_ROUTED_DONE) $(WORK_DIR)/.concept_backbone_sorted_done \
     $(SKOS_DIR)/skos_P31_other_concepts.nt \
     $(SKOS_DIR)/skos_P31_other_concept_scheme.nt \
     $(SKOS_DIR)/skos_P31_other_labels_$(LOCALE).nt \
@@ -594,7 +614,7 @@ clean:
 # -----------------------
 
 # Build core QID → "core" group map from core_subjects.tsv (URI format)
-$(FULLTEXT_CORE_MAP): $(CORE_QIDS) | $(WORK_DIR)
+$(FULLTEXT_CORE_MAP): $(WORK_DIR)/.core_qids_done | $(WORK_DIR)
 	sed 's|<http://www.wikidata.org/entity/||;s|>||g' $< \
 	  | awk '{print $$1 "\tcore"}' > $@
 
@@ -669,18 +689,34 @@ CLASS_QID_FULLTEXT_OUTS := $(foreach Q,$(QIDS),\
 
 fulltext_class_qid: $(CLASS_QID_FULLTEXT_OUTS)
 
-# Per-class-group fulltext files — concatenate per-QID files for each classes/*.tsv
-define FULLTEXT_CLASS_GROUP_RULE
-$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).tsv: \
-    $(foreach Q,$(shell awk '{print $$1}' $(ROOT_DIR)/classes/$(1).tsv),\
-      $(FULLTEXT_CLASS_QIDS_DIR)/wikicore-$(RUN_DATE)-$(Q)-$(LOCALE).tsv) | $(FULLTEXT_CLASS_GROUPS_DIR)
-	cat $$^ > $$@
-	@echo "Generated $$@"
+# Per-class-group fulltext files are now generated by the single-pass split_fulltext.py
+# The individual rules are kept as placeholders but the actual generation is done by FULLTEXT_CLASS_GROUPS_DONE
+$(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-%-$(LOCALE).tsv: $(FULLTEXT_CLASS_GROUPS_DONE)
+	@# File is generated by the single-pass processing above
+
+# Fix CLASS_RULE to handle missing SKOS files gracefully
+define CLASS_RULE
+$(CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(1)-$(LOCALE).nt: $(WORK_DIR)/.concept_backbone_sorted_done | $(CLASS_GROUPS_DIR)
+	@# Create class group .nt file using Python script
+	@RUN_DATE=$(RUN_DATE) python $(ROOT_DIR)/python/create_class_group_nt.py $(1) $(SKOS_DIR) $(CLASS_GROUPS_DIR) $(LOCALE)
 endef
-$(foreach C,$(ALL_CLASS_NAMES),$(eval $(call FULLTEXT_CLASS_GROUP_RULE,$(C))))
+$(foreach C,$(ALL_CLASS_NAMES),$(eval $(call CLASS_RULE,$(C))))
 
 # All class group fulltext files
-fulltext_class_groups: $(ALL_CLASS_GROUPS_FULLTEXT)
+fulltext_class_groups: $(FULLTEXT_CLASS_GROUPS_DONE)
+
+$(FULLTEXT_CLASS_GROUPS_DONE): $(FULLTEXT_GZ) $(FULLTEXT_CLASS_INSTANCE_MAP) $(SUBJECTS_DONE) $(WORK_DIR)/.concept_backbone_sorted_done $(LABELS_ROUTED_DONE) | $(FULLTEXT_CLASS_GROUPS_DIR)
+	# Single pass through fulltext GZ: one TSV per class group.
+	# This is much more memory-efficient than running split_fulltext_for_group.py for each class.
+	@echo "Generating all fulltext class groups in single pass..."
+	python3 $(ROOT_DIR)/python/split_fulltext.py class_groups \
+	  --map     $(FULLTEXT_CLASS_INSTANCE_MAP) \
+	  --class-files "$(ROOT_DIR)/classes/" \
+	  --gz      $(FULLTEXT_GZ) \
+	  --out-dir $(FULLTEXT_CLASS_GROUPS_DIR) \
+	  --date    $(RUN_DATE) \
+	  --locale  $(LOCALE)
+	@touch $@
 
 # Specific class group: make fulltext_class_group CLASS_FILE=classes/aircraft.tsv
 CLASS_GROUP_FULLTEXT_TSV = $(FULLTEXT_CLASS_GROUPS_DIR)/wikicore-$(RUN_DATE)-$(CLASS_NAME)-$(LOCALE).tsv

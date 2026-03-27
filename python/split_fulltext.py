@@ -8,9 +8,10 @@ the fulltext GZ exactly once and routing each line to the appropriate output
 file(s) via in-memory dict lookups.
 
 Modes:
-  classes   Route each instance QID to its class QID output file(s).
-  occs      Route each person QID to their occupation group output file(s).
-            A person in multiple groups is written to each group file.
+  classes       Route each instance QID to its class QID output file(s).
+  class_groups  Route each instance QID to its class group output file(s).
+  occs          Route each person QID to their occupation group output file(s).
+                A person in multiple groups is written to each group file.
 
 Output format per line: text<TAB><http://www.wikidata.org/entity/QID>
 
@@ -38,6 +39,7 @@ import resource
 import sys
 from collections import defaultdict
 from pathlib import Path
+import glob
 
 
 def outfile_path(out_dir: Path, date: str, key: str, locale: str) -> Path:
@@ -123,6 +125,43 @@ def run_classes(args: argparse.Namespace) -> None:
     write_lines(routing_map, args.gz, out_dir, args.date, args.locale, touch_keys)
 
 
+def run_class_groups(args: argparse.Namespace) -> None:
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Loading instance→class map from {args.map}...")
+    instance_class_map = load_map(args.map)
+    print(f"Loaded {len(instance_class_map):,} instance QIDs")
+
+    # Load class QID to class group mapping from classes/*.tsv files
+    class_group_map = {}
+    class_files = glob.glob(f"{args.class_files}/*.tsv")
+    for class_file in class_files:
+        group_name = Path(class_file).stem  # e.g., "aircraft" from "aircraft.tsv"
+        with open(class_file) as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if parts:
+                    qid = parts[0]  # First column is QID
+                    if qid:
+                        class_group_map[qid] = group_name
+    print(f"Loaded {len(class_group_map):,} class QIDs mapped to {len(class_files):,} groups")
+
+    # Build instance QID → class group routing map
+    routing_map = defaultdict(list)
+    for instance_qid, class_qids in instance_class_map.items():
+        for class_qid in class_qids:
+            if class_qid in class_group_map:
+                group_name = class_group_map[class_qid]
+                routing_map[instance_qid].append(group_name)
+
+    touch_keys = set(class_group_map.values())
+    print(f"Built routing map: {len(routing_map):,} instance QIDs → {len(touch_keys):,} class groups")
+
+    print(f"Streaming {args.gz}...")
+    write_lines(routing_map, args.gz, out_dir, args.date, args.locale, touch_keys)
+
+
 def run_occs(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +193,14 @@ def main() -> None:
     p_classes.add_argument("--date",    required=True, help="Release date string (YYYYMMDD)")
     p_classes.add_argument("--locale",  required=True, help="Locale string (eg. en)")
 
+    p_class_groups = sub.add_parser("class_groups", help="Route fulltext to per-class-group files")
+    p_class_groups.add_argument("--map",        required=True, help="instance_qid→class_qid TSV")
+    p_class_groups.add_argument("--class-files", required=True, help="Directory containing classes/*.tsv files")
+    p_class_groups.add_argument("--gz",       required=True, help="Fulltext GZ source")
+    p_class_groups.add_argument("--out-dir",  required=True, help="Output directory")
+    p_class_groups.add_argument("--date",     required=True, help="Release date string (YYYYMMDD)")
+    p_class_groups.add_argument("--locale",   required=True, help="Locale string (eg. en)")
+
     p_occs = sub.add_parser("occs", help="Route fulltext to per-occupation-group files")
     p_occs.add_argument("--map",     required=True, help="person_qid→group TSV")
     p_occs.add_argument("--gz",      required=True, help="Fulltext GZ source")
@@ -169,6 +216,8 @@ def main() -> None:
 
     if args.mode == "classes":
         run_classes(args)
+    elif args.mode == "class_groups":
+        run_class_groups(args)
     elif args.mode == "occs":
         run_occs(args)
     else:
