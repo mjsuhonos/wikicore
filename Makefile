@@ -1,0 +1,128 @@
+# -----------------------
+# Wiki Core processing pipeline
+# -----------------------
+
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
+
+# -----------------------
+# Options
+# -----------------------
+LOCALE    ?= en
+RUN_DATE  := $(shell date +%Y%m%d)
+VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
+
+# Paths
+ROOT_DIR         := $(PWD)
+SOURCE_DIR       := $(ROOT_DIR)/source.nosync
+WORK_DIR         := $(ROOT_DIR)/working.nosync
+OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
+
+$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class:
+	mkdir -p $@
+
+# Inputs
+CLEANED_GZ       := $(SOURCE_DIR)/wikidata-20251229-cleaned.gz
+SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
+
+# Extracted gzip files
+SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
+SITELINKS_NT     := $(WORK_DIR)/wikidata-sitelinks.nt
+
+# 1. Extract URIs with Wikipedia sitelinks (~11M filter)
+$(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR) $(OUT_DIR)
+	pigz -dc $< | awk '{print $$1}' | LC_ALL=C sort -u > $@
+
+# 2. Extract N-triples with subject URIs having sitelinks (~28M total)
+# FIXME: slow! perhaps chunk and parallelize?
+$(SITELINKS_NT): $(CLEANED_GZ) $(SITELINKS_FILE)
+	pigz -dc $< \
+		| rg -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' -e 'skos/core#.*"@$(LOCALE) \.' \
+		| rg -F -v '_:' \
+		| awk -v sf=$(SITELINKS_FILE) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+		> $@
+
+# -----------------------
+# Wikidata files
+# -----------------------
+SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
+PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
+PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
+PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
+PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
+
+# 3. Extract localized labels (~14M English)
+$(SKOS_LABELS_NT): $(SITELINKS_NT)
+	rg 'skos/core#.*"@$(LOCALE) \.' $< | LC_ALL=C sort -u > $@
+
+# 4. Extract subclass_of (core) properties (~428K)
+$(PROPS_P279_NT): $(SITELINKS_NT)
+	rg -F -e '/prop/direct/P279>' $< | LC_ALL=C sort -u > $@
+
+# 4. Extract part_of (core) properties (~475K)
+$(PROPS_P361_NT): $(SITELINKS_NT)
+	rg -F -e '/prop/direct/P361>' $< | LC_ALL=C sort -u > $@
+
+# 4. Extract instance_of (class) properties (~10M)
+$(PROPS_P31_NT): $(SITELINKS_NT)
+	rg -F -e '/prop/direct/P31>' $< | LC_ALL=C sort -u > $@
+
+# 4. Extract occupation properties (~3.3M)
+$(PROPS_P106_NT): $(SITELINKS_NT)
+	rg -F -e '/prop/direct/P106>' $< | LC_ALL=C sort -u > $@
+
+# -----------------------
+# Reusable SKOS generator
+# -----------------------
+define generate_skos_nt
+	BASE="$$(basename $1 .tsv)" ; \
+	SUBJECT_URI="$(VOCAB_URI)${3:+/}$3"; \
+	echo "<$$SUBJECT_URI/$$BASE> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#ConceptScheme> ." > $2 ; \
+	sed "s|.*|& <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .\n& <http://www.w3.org/2004/02/skos/core#inScheme> <$$SUBJECT_URI/$$BASE> .|" $1 >> $2
+	LC_ALL=C join $1 $(SKOS_LABELS_NT) >> $2
+	LC_ALL=C join $1 $(PROPS_P361_NT) | sed 's|<http://www.wikidata.org/prop/direct/P361>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2
+	LC_ALL=C join $1 $(PROPS_P279_NT) | sed 's|<http://www.wikidata.org/prop/direct/P279>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2
+endef
+
+# -----------------------
+OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
+CLASS_FILES := $(wildcard $(ROOT_DIR)/class/*.tsv)
+# -----------------------
+
+# Generate URI lists for each occupation
+$(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
+	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
+
+# Make SKOS output for each occupation
+$(OUT_DIR)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_DIR)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	$(call generate_skos_nt,$<,$@,occupation)
+
+# Generate URI lists for each class
+$(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
+	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
+
+# Make SKOS output for each class
+$(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	$(call generate_skos_nt,$<,$@,class)
+
+# Generate URI lists for each concept (non-instance, non-human)
+$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
+
+$(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
+	$(call generate_skos_nt,$<,$@)
+
+# -----------------------
+# Main targets
+# -----------------------
+core: $(OUT_DIR)/core.nt
+
+class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES)) \
+		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
+
+occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
+
+all: core class occupation
+	@echo "  LOCALE=$(LOCALE)"
+	@echo "  RUN_DATE=$(RUN_DATE)"
