@@ -18,16 +18,18 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 
-$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class:
+$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation:
 	mkdir -p $@
 
 # Inputs
 CLEANED_GZ       := $(SOURCE_DIR)/wikidata-20251229-cleaned.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
+FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
 # Extracted gzip files
 SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
 SITELINKS_NT     := $(WORK_DIR)/wikidata-sitelinks.nt
+SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
 
 # 1. Extract URIs with Wikipedia sitelinks (~11M filter)
 $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR) $(OUT_DIR)
@@ -40,6 +42,13 @@ $(SITELINKS_NT): $(CLEANED_GZ) $(SITELINKS_FILE)
 		| rg -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' -e 'skos/core#.*"@$(LOCALE) \.' \
 		| rg -F -v '_:' \
 		| awk -v sf=$(SITELINKS_FILE) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+		> $@
+
+# Extract URIs with (EN) Wikipedia fulltext (~5M filter)
+$(SITELINKS_WD5M): $(FULLTEXT_GZ)
+	pigz -dc $< | sed -E 's/^([^\t]+)\t(.*)/<http:\/\/www.wikidata.org\/entity\/\1>\t\2/' \
+		| awk -v sf=$(SITELINKS_FILE) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+		| LC_ALL=C sort -u \
 		> $@
 
 # -----------------------
@@ -119,8 +128,21 @@ $(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
 $(OUT_DIR)/class.nt: $(OUT_DIR)/class
 	cat $</*.nt > $@
 
+# Make fulltext output for each class
+$(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
+	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+
+# Make fulltext output for each occupation
+$(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/occupation
+	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+
+# Generate fulltext for existing URI lists
+$(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
+	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
+	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
 # -----------------------
 # Main targets
@@ -134,6 +156,10 @@ class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES
 occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES)) \
 			$(OUT_DIR)/occupation.nt
+
+fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(OUT_DIR)/fulltext/core.tsv
 
 all: core class occupation
 	@echo "  LOCALE=$(LOCALE)"
