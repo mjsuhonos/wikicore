@@ -105,12 +105,22 @@ $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31
 $(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,class)
 
-# Generate URI lists for each concept (non-instance, non-human)
+# Generate URI lists for each concept (non-instance)
+# TODO: confirm whether this includes humans with P279/P361
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
 $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 	$(call generate_skos_nt,$<,$@)
+
+$(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
+	cat $</*.nt > $@
+
+$(OUT_DIR)/class.nt: $(OUT_DIR)/class
+	cat $</*.nt > $@
+
+compress:
+	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 
 # -----------------------
 # Main targets
@@ -118,10 +128,12 @@ $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 core: $(OUT_DIR)/core.nt
 
 class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES)) \
-		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
+		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES)) \
+		$(OUT_DIR)/class.nt
 
 occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES)) \
+			$(OUT_DIR)/occupation.nt
 
 all: core class occupation
 	@echo "  LOCALE=$(LOCALE)"
