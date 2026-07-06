@@ -18,7 +18,7 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 
-$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation:
+$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation $(OUT_DIR)/annif:
 	mkdir -p $@
 
 # Inputs
@@ -119,16 +119,9 @@ $(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
+# Make SKOS output for core concepts
 $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 	$(call generate_skos_nt,$<,$@)
-
-# FIXME: race condition?  these are always too small by a factor of 10^3
-#$(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
-#	cat $</*.nt > $@
-
-# FIXME: race condition?  these are always too small by a factor of 10^3
-#$(OUT_DIR)/class.nt: $(OUT_DIR)/class
-#	cat $</*.nt > $@
 
 # Make fulltext output for each class
 $(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
@@ -138,17 +131,72 @@ $(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(O
 $(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/occupation
 	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
 
-# Generate fulltext for existing URI lists
+# Generate fulltext for concept URI lists
 $(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
 	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
 
 # GZip files so they're small enough to commit to GitHub
-# Some are still too big:
-# - class.nt.gz 
-# - fulltext/class/human.tsv.gz 
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+
+# TODO: new target:
+# concat: $(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
+#	cat $</*.nt > $@
+#$(OUT_DIR)/class.nt: $(OUT_DIR)/class
+#	cat $</*.nt > $@
+# FIXME: race condition?  these are always too small by a factor of 10^3
+#		$(OUT_DIR)/class.nt
+#		$(OUT_DIR)/occupation.nt
+
+# -----------------------
+# Annif targets
+# -----------------------
+BACKEND   := mllm
+$(OUT_DIR)/annif/projects_class.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class
+	@for a in $</*; do \
+		subdir=$$(basename "$$a" .tsv); \
+		lines=$$(wc -l < "$$a"); \
+		echo "" >> $@; \
+		echo "# Vocab size: $$lines" >> $@; \
+		echo "[wikicore_$(LOCALE)_$(BACKEND)_class_$$subdir]" >> $@; \
+		echo "name = WikiCore $(BACKEND) Class $$subdir ($(LOCALE))" >> $@; \
+		echo "backend = $(BACKEND)" >> $@; \
+		echo "language = $(LOCALE)" >> $@; \
+		echo "analyzer = snowball(english)" >> $@; \
+		echo "vocab = wikicore-$(RUN_DATE)-class-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/class/$$subdir)" >> $@; \
+		echo "limit = 100" >> $@; \
+	done
+
+$(OUT_DIR)/annif/projects_occupation.cfg: $(OUT_DIR)/annif $(WORK_DIR)/occupation
+	@for a in $</*; do \
+		subdir=$$(basename "$$a" .tsv); \
+		lines=$$(wc -l < "$$a"); \
+		echo "" >> $@; \
+		echo "# Vocab size: $$lines" >> $@; \
+		echo "[wikicore_$(LOCALE)_$(BACKEND)_occupation_$$subdir]" >> $@; \
+		echo "name = WikiCore $(BACKEND) occupation $$subdir ($(LOCALE))" >> $@; \
+		echo "backend = $(BACKEND)" >> $@; \
+		echo "language = $(LOCALE)" >> $@; \
+		echo "analyzer = snowball(english)" >> $@; \
+		echo "vocab = wikicore-$(RUN_DATE)-occupation-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/occupation/$$subdir)" >> $@; \
+		echo "limit = 100" >> $@; \
+	done
+
+$(OUT_DIR)/annif/projects_main.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class $(WORK_DIR)/occupation
+	a=$(WORK_DIR)/core.tsv; \
+	subdir=$$(basename "$$a" .tsv); \
+	lines=$$(wc -l < "$$a"); \
+	echo "" >> $@; \
+	echo "# Vocab size: $$lines" >> $@; \
+	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$subdir]" >> $@; \
+	echo "name = WikiCore $(BACKEND) $$subdir ($(LOCALE))" >> $@; \
+	echo "backend = $(BACKEND)" >> $@; \
+	echo "language = $(LOCALE)" >> $@; \
+	echo "analyzer = snowball(english)" >> $@; \
+	echo "vocab = wikicore-$(RUN_DATE)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$$subdir)" >> $@; \
+	echo "limit = 100" >> $@; \
+
 
 # -----------------------
 # Main targets
@@ -157,15 +205,16 @@ core: $(OUT_DIR)/core.nt
 
 class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES)) \
 		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES)) \
-#		$(OUT_DIR)/class.nt
 
 occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES)) \
-#			$(OUT_DIR)/occupation.nt
 
 fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(OUT_DIR)/fulltext/core.tsv
+
+annif: 	$(OUT_DIR)/annif/projects_class.cfg \
+		$(OUT_DIR)/annif/projects_occupation.cfg
 
 all: core class occupation fulltext
 	@echo "  LOCALE=$(LOCALE)"
