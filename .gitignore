@@ -3,4 +3,5 @@
 *.nt
 */fulltext/*.tsv
 */fulltext/*/*.tsv
-/*/fulltext/class/human.tsv.gz
+*/fulltext/class/human.tsv.gz
+*/class.nt.gz

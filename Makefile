@@ -102,17 +102,29 @@ CLASS_FILES := $(wildcard $(ROOT_DIR)/class/*.tsv)
 $(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
+$(WORK_DIR)/occupation.tsv: $(WORK_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES))
+	cat $</* | LC_ALL=C sort -u >> $@
+
 # Make SKOS output for each occupation
 $(OUT_DIR)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_DIR)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,occupation)
+
+$(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
+	cat $</* | LC_ALL=C sort -u >> $@
 
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
+$(WORK_DIR)/class.tsv: $(WORK_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES))
+	cat $</* | LC_ALL=C sort -u >> $@
+
 # Make SKOS output for each class
 $(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,class)
+
+$(OUT_DIR)/class.nt: $(OUT_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
+	cat $</* | LC_ALL=C sort -u >> $@
 
 # Generate URI lists for each concept (non-instance)
 # TODO: confirm whether this includes humans with P279/P361
@@ -139,15 +151,6 @@ $(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
-
-# TODO: new target:
-# concat: $(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
-#	cat $</*.nt > $@
-#$(OUT_DIR)/class.nt: $(OUT_DIR)/class
-#	cat $</*.nt > $@
-# FIXME: race condition?  these are always too small by a factor of 10^3
-#		$(OUT_DIR)/class.nt
-#		$(OUT_DIR)/occupation.nt
 
 # -----------------------
 # Annif targets
@@ -203,11 +206,11 @@ $(OUT_DIR)/annif/projects_main.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class $(WORK_DI
 # -----------------------
 core: $(OUT_DIR)/core.nt
 
-class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES)) \
-		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES)) \
+class:  $(WORK_DIR)/class.tsv \
+		$(OUT_DIR)/class.nt \
 
-occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES)) \
+occupation: $(WORK_DIR)/occupation.tsv \
+			$(OUT_DIR)/occupation.nt \
 
 fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
