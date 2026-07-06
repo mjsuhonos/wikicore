@@ -2,3 +2,4 @@
 *.nt
 */fulltext/*.tsv
 */fulltext/*/*.tsv
+/*/fulltext/class/human.tsv.gz
