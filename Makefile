@@ -156,7 +156,7 @@ compress:
 # Annif targets
 # -----------------------
 BACKEND   := mllm
-$(OUT_DIR)/annif/projects_class.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class
+$(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
 	@for a in $</*; do \
 		subdir=$$(basename "$$a" .tsv); \
 		lines=$$(wc -l < "$$a"); \
@@ -171,7 +171,7 @@ $(OUT_DIR)/annif/projects_class.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class
 		echo "limit = 100" >> $@; \
 	done
 
-$(OUT_DIR)/annif/projects_occupation.cfg: $(OUT_DIR)/annif $(WORK_DIR)/occupation
+$(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/annif
 	@for a in $</*; do \
 		subdir=$$(basename "$$a" .tsv); \
 		lines=$$(wc -l < "$$a"); \
@@ -186,7 +186,7 @@ $(OUT_DIR)/annif/projects_occupation.cfg: $(OUT_DIR)/annif $(WORK_DIR)/occupatio
 		echo "limit = 100" >> $@; \
 	done
 
-$(OUT_DIR)/annif/projects_main.cfg: $(OUT_DIR)/annif $(WORK_DIR)/class $(WORK_DIR)/occupation
+$(OUT_DIR)/annif/projects_main.cfg: | $(OUT_DIR)/annif $(WORK_DIR)/class $(WORK_DIR)/occupation
 	a=$(WORK_DIR)/core.tsv; \
 	subdir=$$(basename "$$a" .tsv); \
 	lines=$$(wc -l < "$$a"); \
@@ -214,10 +214,11 @@ occupation: $(WORK_DIR)/occupation.tsv \
 
 fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(OUT_DIR)/fulltext/core.tsv
+			$(OUT_DIR)/fulltext/core.tsv \
 
 annif: 	$(OUT_DIR)/annif/projects_class.cfg \
-		$(OUT_DIR)/annif/projects_occupation.cfg
+		$(OUT_DIR)/annif/projects_occupation.cfg \
+		$(OUT_DIR)/annif/projects_main.cfg \
 
 all: core class occupation fulltext
 	@echo "  LOCALE=$(LOCALE)"
