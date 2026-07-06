@@ -122,11 +122,13 @@ $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 	$(call generate_skos_nt,$<,$@)
 
-$(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
-	cat $</*.nt > $@
+# FIXME: race condition?  these are always too small by a factor of 10^3
+#$(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation
+#	cat $</*.nt > $@
 
-$(OUT_DIR)/class.nt: $(OUT_DIR)/class
-	cat $</*.nt > $@
+# FIXME: race condition?  these are always too small by a factor of 10^3
+#$(OUT_DIR)/class.nt: $(OUT_DIR)/class
+#	cat $</*.nt > $@
 
 # Make fulltext output for each class
 $(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
@@ -155,16 +157,16 @@ core: $(OUT_DIR)/core.nt
 
 class:  $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES)) \
 		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES)) \
-		$(OUT_DIR)/class.nt
+#		$(OUT_DIR)/class.nt
 
 occupation: $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES)) \
-			$(OUT_DIR)/occupation.nt
+#			$(OUT_DIR)/occupation.nt
 
 fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(OUT_DIR)/fulltext/core.tsv
 
-all: core class occupation
+all: core class occupation fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
