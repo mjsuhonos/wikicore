@@ -140,6 +140,10 @@ $(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS
 $(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
 	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
 
+# GZip files so they're small enough to commit to GitHub
+# Some are still too big:
+# - class.nt.gz 
+# - fulltext/class/human.tsv.gz 
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
