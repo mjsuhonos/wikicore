@@ -1,2 +1,4 @@
 *.nosync
 *.nt
+*/fulltext/*.tsv
+*/fulltext/*/*.tsv
