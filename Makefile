@@ -85,7 +85,7 @@ $(PROPS_P106_NT): $(SITELINKS_NT)
 # -----------------------
 define generate_skos_nt
 	BASE="$$(basename $1 .tsv)" ; \
-	SUBJECT_URI="$(VOCAB_URI)${3:+/}$3"; \
+	if [ -n "$$3" ]; then SUBJECT_URI="$(VOCAB_URI)/$$3"; else SUBJECT_URI="$(VOCAB_URI)"; fi ; \
 	echo "<$$SUBJECT_URI/$$BASE> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#ConceptScheme> ." > $2 ; \
 	sed "s|.*|& <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .\n& <http://www.w3.org/2004/02/skos/core#inScheme> <$$SUBJECT_URI/$$BASE> .|" $1 >> $2
 	LC_ALL=C join $1 $(SKOS_LABELS_NT) >> $2
@@ -153,53 +153,37 @@ compress:
 	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
 # -----------------------
-# Annif targets
+# Reusable Annif project generator
 # -----------------------
 BACKEND   := mllm
-$(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
-	@for a in $</*; do \
-		subdir=$$(basename "$$a" .tsv); \
-		lines=$$(wc -l < "$$a"); \
-		echo "" >> $@; \
-		echo "# Vocab size: $$lines" >> $@; \
-		echo "[wikicore_$(LOCALE)_$(BACKEND)_class_$$subdir]" >> $@; \
-		echo "name = WikiCore $(BACKEND) Class $$subdir ($(LOCALE))" >> $@; \
-		echo "backend = $(BACKEND)" >> $@; \
-		echo "language = $(LOCALE)" >> $@; \
-		echo "analyzer = snowball(english)" >> $@; \
-		echo "vocab = wikicore-$(RUN_DATE)-class-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/class/$$subdir)" >> $@; \
-		echo "limit = 100" >> $@; \
-	done
-
-$(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/annif
-	@for a in $</*; do \
-		subdir=$$(basename "$$a" .tsv); \
-		lines=$$(wc -l < "$$a"); \
-		echo "" >> $@; \
-		echo "# Vocab size: $$lines" >> $@; \
-		echo "[wikicore_$(LOCALE)_$(BACKEND)_occupation_$$subdir]" >> $@; \
-		echo "name = WikiCore $(BACKEND) occupation $$subdir ($(LOCALE))" >> $@; \
-		echo "backend = $(BACKEND)" >> $@; \
-		echo "language = $(LOCALE)" >> $@; \
-		echo "analyzer = snowball(english)" >> $@; \
-		echo "vocab = wikicore-$(RUN_DATE)-occupation-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/occupation/$$subdir)" >> $@; \
-		echo "limit = 100" >> $@; \
-	done
-
-$(OUT_DIR)/annif/projects_main.cfg: | $(OUT_DIR)/annif $(WORK_DIR)/class $(WORK_DIR)/occupation
-	a=$(WORK_DIR)/core.tsv; \
+define generate_project
+	a=$(1); \
+	prefix=$(2); \
 	subdir=$$(basename "$$a" .tsv); \
 	lines=$$(wc -l < "$$a"); \
 	echo "" >> $@; \
 	echo "# Vocab size: $$lines" >> $@; \
-	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$subdir]" >> $@; \
-	echo "name = WikiCore $(BACKEND) $$subdir ($(LOCALE))" >> $@; \
+	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$prefix_$$subdir]" >> $@; \
+	echo "name = WikiCore $(BACKEND) $$prefix $$subdir ($(LOCALE))" >> $@; \
 	echo "backend = $(BACKEND)" >> $@; \
 	echo "language = $(LOCALE)" >> $@; \
 	echo "analyzer = snowball(english)" >> $@; \
-	echo "vocab = wikicore-$(RUN_DATE)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$$subdir)" >> $@; \
-	echo "limit = 100" >> $@; \
+	echo "vocab = wikicore-$(RUN_DATE)-$$prefix-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)$${prefix:+/}$${prefix}/$$subdir)" >> $@; \
+	echo "limit = 100" >> $@;
+endef
 
+$(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
+	@for a in $</*; do \
+		$(call generate_project,$$a,class); \
+	done
+
+$(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/annif
+	@for a in $</*; do \
+		$(call generate_project,$$a,occupation); \
+	done
+
+$(OUT_DIR)/annif/projects_main.cfg: $(WORK_DIR)/core.tsv | $(OUT_DIR)/annif
+	$(call generate_project,$<)
 
 # -----------------------
 # Main targets
@@ -220,6 +204,6 @@ annif: 	$(OUT_DIR)/annif/projects_class.cfg \
 		$(OUT_DIR)/annif/projects_occupation.cfg \
 		$(OUT_DIR)/annif/projects_main.cfg \
 
-all: core class occupation fulltext
+all: core class occupation fulltext annif
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
