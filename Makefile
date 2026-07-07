@@ -155,6 +155,7 @@ compress:
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
+# FIXME: line 172 $$prefix vocab name isn't handled eg. like $${prefix:+/}$${prefix}
 BACKEND   := mllm
 define generate_project
 	a=$(1); \
@@ -162,25 +163,46 @@ define generate_project
 	subdir=$$(basename "$$a" .tsv); \
 	lines=$$(wc -l < "$$a"); \
 	echo "" >> $@; \
-	echo "# Vocab size: $$lines" >> $@; \
 	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$prefix_$$subdir]" >> $@; \
 	echo "name = WikiCore $(BACKEND) $$prefix $$subdir ($(LOCALE))" >> $@; \
 	echo "backend = $(BACKEND)" >> $@; \
 	echo "language = $(LOCALE)" >> $@; \
 	echo "analyzer = snowball(english)" >> $@; \
+	echo "limit = 100" >> $@; \
 	echo "vocab = wikicore-$(RUN_DATE)-$$prefix-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)$${prefix:+/}$${prefix}/$$subdir)" >> $@; \
-	echo "limit = 100" >> $@;
+	echo "# Vocab size: $$lines" >> $@
+endef
+
+define generate_ensemble
+	group=$(1); \
+	prefix=$(2); \
+	sources=$$(echo "$$group" | awk -F'\t' -v prefix="wikicore_$(LOCALE)_$(BACKEND)_$$prefix_" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF?",":"")}}}'); \
+	vocab=$$(echo "$$group" | awk -F'\t' -v prefix="https://wikicore.ca/$(RUN_DATE)/$$prefix/" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF?"|":"")}}}'); \
+	echo "" >> $@; \
+	echo "[wikicore_$(LOCALE)_ensemble_$$prefix]" >> $@; \
+	echo "name = WikiCore Ensemble $$prefix ($(LOCALE))" >> $@; \
+	echo "backend = ensemble" >> $@; \
+	echo "language = $(LOCALE)" >> $@; \
+	echo "limit = 100" >> $@; \
+	echo "sources = $$sources" >> $@; \
+	echo "vocab = wikicore-$(RUN_DATE)-$$prefix-$(LOCALE)(exclude=*,include_scheme=$$vocab)" >> $@
 endef
 
 $(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
-	@for a in $</*; do \
+	@classes=''; \
+	for a in $</*; do \
+		classes="$$classes$$(basename "$$a" .tsv)	"; \
 		$(call generate_project,$$a,class); \
-	done
+	done; \
+	$(call generate_ensemble,$$classes,class);
 
 $(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/annif
-	@for a in $</*; do \
+	@occupations=''; \
+	for a in $</*; do \
+		occupations="$$occupations$$(basename "$$a" .tsv)	"; \
 		$(call generate_project,$$a,occupation); \
-	done
+	done; \
+	$(call generate_ensemble,$$occupations,occupation);
 
 $(OUT_DIR)/annif/projects_main.cfg: $(WORK_DIR)/core.tsv | $(OUT_DIR)/annif
 	$(call generate_project,$<)
