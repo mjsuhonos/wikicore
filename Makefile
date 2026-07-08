@@ -18,7 +18,7 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 
-$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation $(OUT_DIR)/annif:
+$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation $(OUT_DIR)/annif  $(OUT_DIR)/fulltext/splits $(OUT_DIR)/fulltext/splits/class $(OUT_DIR)/fulltext/splits/occupation:
 	mkdir -p $@
 
 # Inputs
@@ -137,15 +137,35 @@ $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 
 # Make fulltext output for each class
 $(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
-	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
 
 # Make fulltext output for each occupation
 $(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/occupation
-	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
 
 # Generate fulltext for concept URI lists
 $(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
-	LC_ALL=C join $< $(SITELINKS_WD5M) > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
+
+define split_file
+	input="$(2)"; \
+	dir=$$(dirname "$$input"); \
+	base=$$(basename "$$input" .tsv); \
+	total_lines=$$(wc -l < "$(1)"); \
+	test_lines=$$((total_lines * 10 / 100)); \
+	eval_lines=$$((total_lines * 10 / 100)); \
+	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.tsv"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.tsv"); else print > (dir "/" base "-train.tsv")}'
+endef
+
+# Generate test/train/eval splits for fulltext
+$(OUT_DIR)/fulltext/splits/core.tsv: $(OUT_DIR)/fulltext/core.tsv | $(OUT_DIR)/fulltext/splits
+	$(call split_file,$<,$@)
+
+$(OUT_DIR)/fulltext/splits/class/%.tsv: $(OUT_DIR)/fulltext/class/%.tsv | $(OUT_DIR)/fulltext/splits/class
+	$(call split_file,$<,$@)
+
+$(OUT_DIR)/fulltext/splits/occupation/%.tsv: $(OUT_DIR)/fulltext/occupation/%.tsv | $(OUT_DIR)/fulltext/splits/occupation
+	$(call split_file,$<,$@)
 
 # GZip files so they're small enough to commit to GitHub
 compress:
@@ -221,6 +241,10 @@ occupation: $(WORK_DIR)/occupation.tsv \
 fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
 			$(OUT_DIR)/fulltext/core.tsv \
+
+splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/splits/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/splits/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(OUT_DIR)/fulltext/splits/core.tsv \
 
 annif: 	$(OUT_DIR)/annif/projects_class.cfg \
 		$(OUT_DIR)/annif/projects_occupation.cfg \
