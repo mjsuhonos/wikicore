@@ -175,7 +175,7 @@ compress:
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
-# FIXME: line 172 $$prefix vocab name isn't handled eg. like $${prefix:+/}$${prefix}
+# FIXME: line 192 $$prefix vocab name isn't handled eg. like $${prefix:+/}$${prefix}
 BACKEND   := mllm
 define generate_project
 	a=$(1); \
@@ -183,21 +183,21 @@ define generate_project
 	subdir=$$(basename "$$a" .tsv); \
 	lines=$$(wc -l < "$$a"); \
 	echo "" >> $@; \
-	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$prefix_$$subdir]" >> $@; \
-	echo "name = WikiCore $(BACKEND) $$prefix $$subdir ($(LOCALE))" >> $@; \
+	echo "[wikicore_$(LOCALE)_$(BACKEND)_$$prefix$${prefix:+_}$$subdir]" >> $@; \
+	echo "name = WikiCore $(BACKEND) $$prefix$${prefix:+ }$$subdir ($(LOCALE))" >> $@; \
 	echo "backend = $(BACKEND)" >> $@; \
 	echo "language = $(LOCALE)" >> $@; \
 	echo "analyzer = snowball(english)" >> $@; \
 	echo "limit = 100" >> $@; \
-	echo "vocab = wikicore-$(RUN_DATE)-$$prefix-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)$${prefix:+/}$${prefix}/$$subdir)" >> $@; \
+	echo "vocab = wikicore-$(RUN_DATE)$${prefix:+-}$$prefix-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)$${prefix:+/}$${prefix}/$$subdir)" >> $@; \
 	echo "# Vocab size: $$lines" >> $@
 endef
 
 define generate_ensemble
 	group=$(1); \
 	prefix=$(2); \
-	sources=$$(echo "$$group" | awk -F'\t' -v prefix="wikicore_$(LOCALE)_$(BACKEND)_$$prefix_" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF?",":"")}}}'); \
-	vocab=$$(echo "$$group" | awk -F'\t' -v prefix="https://wikicore.ca/$(RUN_DATE)/$$prefix/" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF?"|":"")}}}'); \
+	sources=$$(echo "$$group" | awk -F'\t' -v prefix="wikicore_$(LOCALE)_$(BACKEND)_$(2)_" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF && $$(i+1) != ""?",":"")}}}'); \
+	vocab=$$(echo "$$group" | awk -F'\t' -v prefix="https://wikicore.ca/$(RUN_DATE)/$$prefix/" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF && $$(i+1) != ""?"|":"")}}}'); \
 	echo "" >> $@; \
 	echo "[wikicore_$(LOCALE)_ensemble_$$prefix]" >> $@; \
 	echo "name = WikiCore Ensemble $$prefix ($(LOCALE))" >> $@; \
@@ -250,6 +250,6 @@ annif: 	$(OUT_DIR)/annif/projects_class.cfg \
 		$(OUT_DIR)/annif/projects_occupation.cfg \
 		$(OUT_DIR)/annif/projects_main.cfg \
 
-all: core class occupation fulltext annif
+all: core class occupation fulltext splits annif
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
