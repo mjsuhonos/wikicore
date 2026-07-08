@@ -137,15 +137,15 @@ $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 
 # Make fulltext output for each class
 $(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
-	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 # Make fulltext output for each occupation
 $(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/occupation
-	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 # Generate fulltext for concept URI lists
 $(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
-	LC_ALL=C join $< $(SITELINKS_WD5M) | awk -F '\t' '{print $2 "\t" $1}' > $@
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 define split_file
 	input="$(2)"; \
