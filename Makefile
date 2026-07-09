@@ -91,7 +91,7 @@ $(PROPS_P106_NT): $(SITELINKS_NT)
 # -----------------------
 define generate_skos_nt
 	BASE="$$(basename $1 .tsv)" ; \
-	if [ -n "$$3" ]; then SUBJECT_URI="$(VOCAB_URI)/$$3"; else SUBJECT_URI="$(VOCAB_URI)"; fi ; \
+	if [ -n "$3" ]; then SUBJECT_URI="$(VOCAB_URI)/$3"; else SUBJECT_URI="$(VOCAB_URI)"; fi ; \
 	echo "<$$SUBJECT_URI/$$BASE> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#ConceptScheme> ." > $2 ; \
 	sed "s|.*|& <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .\n& <http://www.w3.org/2004/02/skos/core#inScheme> <$$SUBJECT_URI/$$BASE> .|" $1 >> $2
 	LC_ALL=C join $1 $(SKOS_LABELS_NT) >> $2
@@ -100,7 +100,6 @@ define generate_skos_nt
 endef
 
 # Generate URI lists for each concept (non-instance)
-# FIXME: this includes classes (ie. humans) with P279/P361
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 

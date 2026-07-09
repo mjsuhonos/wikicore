@@ -1,7 +1,7 @@
 *.DS_Store
 *.nosync
 *.nt
-*/fulltext/*.tsv
-*/fulltext/*/*.tsv
-*/fulltext/class/human.tsv.gz
 */class.nt.gz
+*/fulltext/**/*.tsv
+projects.d
+data
