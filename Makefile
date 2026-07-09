@@ -18,7 +18,13 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 
-$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class $(OUT_DIR)/fulltext $(OUT_DIR)/fulltext/class $(OUT_DIR)/fulltext/occupation $(OUT_DIR)/annif  $(OUT_DIR)/fulltext/splits $(OUT_DIR)/fulltext/splits/class $(OUT_DIR)/fulltext/splits/occupation:
+ANNIF_DIR        := $(OUT_DIR)/annif
+FULLTEXT_DIR     := $(OUT_DIR)/fulltext
+
+$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class:
+	mkdir -p $@
+
+$(FULLTEXT_DIR) $(ANNIF_DIR) $(FULLTEXT_DIR)/class $(FULLTEXT_DIR)/occupation  $(FULLTEXT_DIR)/splits $(FULLTEXT_DIR)/splits/class $(FULLTEXT_DIR)/splits/occupation:
 	mkdir -p $@
 
 # Inputs
@@ -93,11 +99,18 @@ define generate_skos_nt
 	LC_ALL=C join $1 $(PROPS_P279_NT) | sed 's|<http://www.wikidata.org/prop/direct/P279>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2
 endef
 
+# Generate URI lists for each concept (non-instance)
+# FIXME: this includes classes (ie. humans) with P279/P361
+$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
+
+# Make SKOS output for core concepts
+$(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
+	$(call generate_skos_nt,$<,$@)
+
 # -----------------------
 OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
-CLASS_FILES := $(wildcard $(ROOT_DIR)/class/*.tsv)
 # -----------------------
-
 # Generate URI lists for each occupation
 $(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
@@ -112,6 +125,9 @@ $(OUT_DIR)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_DIR)/occupation |
 $(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
 	cat $</* | LC_ALL=C sort -u >> $@
 
+# -----------------------
+CLASS_FILES := $(wildcard $(ROOT_DIR)/class/*.tsv)
+# -----------------------
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
@@ -126,27 +142,9 @@ $(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_
 $(OUT_DIR)/class.nt: $(OUT_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
 	cat $</* | LC_ALL=C sort -u >> $@
 
-# Generate URI lists for each concept (non-instance)
-# TODO: confirm whether this includes humans with P279/P361
-$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
-	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
-
-# Make SKOS output for core concepts
-$(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
-	$(call generate_skos_nt,$<,$@)
-
-# Make fulltext output for each class
-$(OUT_DIR)/fulltext/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/class
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
-
-# Make fulltext output for each occupation
-$(OUT_DIR)/fulltext/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext/occupation
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
-
-# Generate fulltext for concept URI lists
-$(OUT_DIR)/fulltext/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(OUT_DIR)/fulltext
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
-
+# -----------------------
+# Reusable training split generator
+# -----------------------
 define split_file
 	input="$(2)"; \
 	dir=$$(dirname "$$input"); \
@@ -157,26 +155,37 @@ define split_file
 	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.tsv"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.tsv"); else print > (dir "/" base "-train.tsv")}'
 endef
 
+# Make fulltext output for each class
+$(FULLTEXT_DIR)/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)/class
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+
+# Make fulltext output for each occupation
+$(FULLTEXT_DIR)/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)/occupation
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+
+# Generate fulltext for concept URI lists
+$(FULLTEXT_DIR)/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)
+	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+
 # Generate test/train/eval splits for fulltext
-$(OUT_DIR)/fulltext/splits/core.tsv: $(OUT_DIR)/fulltext/core.tsv | $(OUT_DIR)/fulltext/splits
+$(FULLTEXT_DIR)/splits/core.tsv: $(FULLTEXT_DIR)/core.tsv | $(FULLTEXT_DIR)/splits
 	$(call split_file,$<,$@)
 
-$(OUT_DIR)/fulltext/splits/class/%.tsv: $(OUT_DIR)/fulltext/class/%.tsv | $(OUT_DIR)/fulltext/splits/class
+$(FULLTEXT_DIR)/splits/class/%.tsv: $(FULLTEXT_DIR)/class/%.tsv | $(FULLTEXT_DIR)/splits/class
 	$(call split_file,$<,$@)
 
-$(OUT_DIR)/fulltext/splits/occupation/%.tsv: $(OUT_DIR)/fulltext/occupation/%.tsv | $(OUT_DIR)/fulltext/splits/occupation
+$(FULLTEXT_DIR)/splits/occupation/%.tsv: $(FULLTEXT_DIR)/occupation/%.tsv | $(FULLTEXT_DIR)/splits/occupation
 	$(call split_file,$<,$@)
 
 # GZip files so they're small enough to commit to GitHub
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
-	find $(OUT_DIR)/fulltext -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+	find $(FULLTEXT_DIR) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
-# FIXME: line 192 $$prefix vocab name isn't handled eg. like $${prefix:+/}$${prefix}
-BACKEND   := mllm
+BACKEND   := yake
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
@@ -208,7 +217,7 @@ define generate_ensemble
 	echo "vocab = wikicore-$(RUN_DATE)-$$prefix-$(LOCALE)(exclude=*,include_scheme=$$vocab)" >> $@
 endef
 
-$(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
+$(ANNIF_DIR)/projects_class.cfg: $(WORK_DIR)/class | $(ANNIF_DIR)
 	@classes=''; \
 	for a in $</*; do \
 		classes="$$classes$$(basename "$$a" .tsv)	"; \
@@ -216,7 +225,7 @@ $(OUT_DIR)/annif/projects_class.cfg: $(WORK_DIR)/class | $(OUT_DIR)/annif
 	done; \
 	$(call generate_ensemble,$$classes,class);
 
-$(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/annif
+$(ANNIF_DIR)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_DIR)
 	@occupations=''; \
 	for a in $</*; do \
 		occupations="$$occupations$$(basename "$$a" .tsv)	"; \
@@ -224,31 +233,27 @@ $(OUT_DIR)/annif/projects_occupation.cfg: $(WORK_DIR)/occupation | $(OUT_DIR)/an
 	done; \
 	$(call generate_ensemble,$$occupations,occupation);
 
-$(OUT_DIR)/annif/projects_main.cfg: $(WORK_DIR)/core.tsv | $(OUT_DIR)/annif
+$(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 	$(call generate_project,$<)
 
 # -----------------------
 # Main targets
 # -----------------------
-core: $(OUT_DIR)/core.nt
+core:       $(OUT_DIR)/core.nt
+class:      $(OUT_DIR)/class.nt
+occupation: $(OUT_DIR)/occupation.nt
 
-class:  $(WORK_DIR)/class.tsv \
-		$(OUT_DIR)/class.nt \
+fulltext:   $(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(FULLTEXT_DIR)/core.tsv \
 
-occupation: $(WORK_DIR)/occupation.tsv \
-			$(OUT_DIR)/occupation.nt \
+splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/splits/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/splits/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(FULLTEXT_DIR)/splits/core.tsv \
 
-fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(OUT_DIR)/fulltext/core.tsv \
-
-splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/fulltext/splits/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/fulltext/splits/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(OUT_DIR)/fulltext/splits/core.tsv \
-
-annif: 	$(OUT_DIR)/annif/projects_class.cfg \
-		$(OUT_DIR)/annif/projects_occupation.cfg \
-		$(OUT_DIR)/annif/projects_main.cfg \
+annif:		$(ANNIF_DIR)/projects_class.cfg \
+			$(ANNIF_DIR)/projects_occupation.cfg \
+			$(ANNIF_DIR)/projects_core.cfg \
 
 all: core class occupation fulltext splits annif
 	@echo "  LOCALE=$(LOCALE)"
