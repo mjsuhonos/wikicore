@@ -184,7 +184,7 @@ compress:
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
-BACKEND   := yake
+BACKEND   := mllm
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
@@ -235,6 +235,36 @@ $(ANNIF_DIR)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_DIR)
 $(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 	$(call generate_project,$<)
 
+define train_eval
+	project=$(1); \
+	file=$(2); \
+	eval_file=$$(echo $$file | sed 's/train/eval/g'); \
+	echo "annif train '$$project' '$$file'" >> $@; \
+	echo "annif eval '$$project' '$$eval_file' -M 'data/eval/$(RUN_DATE)_$$project.json'" >> $@
+endef
+
+$(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR)
+	echo "#!/bin/bash" > $@
+	for a in $</*.nt; do \
+		subdir=$$(basename "$$a" .nt); \
+		echo "annif load-vocab 'wikicore-$(RUN_DATE)-$$subdir-$(LOCALE)' '$$a'" >> $@; \
+	done
+	for b in $(FULLTEXT_DIR)/splits/*train.tsv; do \
+		subdir=$$(basename "$$b" -train.tsv); \
+		project="wikicore_$(LOCALE)_$(BACKEND)_$$subdir"; \
+		$(call train_eval,$$project,$$b); \
+	done
+	for c in $(FULLTEXT_DIR)/splits/class/*train.tsv; do \
+		subdir=$$(basename "$$c" -train.tsv); \
+		project="wikicore_$(LOCALE)_$(BACKEND)_class_$$subdir"; \
+		$(call train_eval,$$project,$$c); \
+	done
+	for d in $(FULLTEXT_DIR)/splits/occupation/*train.tsv; do \
+		subdir=$$(basename "$$d" -train.tsv); \
+		project="wikicore_$(LOCALE)_$(BACKEND)_occupation_$$subdir"; \
+		$(call train_eval,$$project,$$d); \
+	done
+	
 # -----------------------
 # Main targets
 # -----------------------
@@ -253,6 +283,7 @@ splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/splits/class/%.tsv,$
 annif:		$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
 			$(ANNIF_DIR)/projects_core.cfg \
+			$(ANNIF_DIR)/test-train-eval.sh \
 
 all: core class occupation fulltext splits annif
 	@echo "  LOCALE=$(LOCALE)"
