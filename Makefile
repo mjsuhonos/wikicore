@@ -18,20 +18,21 @@ SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 
+WORK_FULLTEXT    := $(WORK_DIR)/fulltext
+OUT_FULLTEXT     := $(OUT_DIR)/fulltext
 ANNIF_DIR        := $(OUT_DIR)/annif
-FULLTEXT_DIR     := $(OUT_DIR)/fulltext
 
-$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class:
+$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation:
 	mkdir -p $@
 
-$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class:
+$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation:
 	mkdir -p $@
 
-$(FULLTEXT_DIR) $(ANNIF_DIR) $(FULLTEXT_DIR)/class $(FULLTEXT_DIR)/occupation  $(FULLTEXT_DIR)/splits $(FULLTEXT_DIR)/splits/class $(FULLTEXT_DIR)/splits/occupation:
+$(ANNIF_DIR):
 	mkdir -p $@
 
 # Inputs
-WIKIDATA_GZ       := $(SOURCE_DIR)/wikidata-20260706-all.nt.gz
+WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260706-all.nt.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
@@ -159,31 +160,31 @@ define split_file
 endef
 
 # Make fulltext output for each class
-$(FULLTEXT_DIR)/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)/class
+$(WORK_FULLTEXT)/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)/class
 	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 # Make fulltext output for each occupation
-$(FULLTEXT_DIR)/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)/occupation
+$(WORK_FULLTEXT)/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)/occupation
 	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 # Generate fulltext for concept URI lists
-$(FULLTEXT_DIR)/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(FULLTEXT_DIR)
+$(WORK_FULLTEXT)/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)
 	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
 
 # Generate test/train/eval splits for fulltext
-$(FULLTEXT_DIR)/splits/core.tsv: $(FULLTEXT_DIR)/core.tsv | $(FULLTEXT_DIR)/splits
+$(OUT_FULLTEXT)/core.tsv: $(WORK_FULLTEXT)/core.tsv | $(OUT_FULLTEXT)
 	$(call split_file,$<,$@)
 
-$(FULLTEXT_DIR)/splits/class/%.tsv: $(FULLTEXT_DIR)/class/%.tsv | $(FULLTEXT_DIR)/splits/class
+$(OUT_FULLTEXT)/class/%.tsv: $(WORK_FULLTEXT)/class/%.tsv | $(OUT_FULLTEXT)/class
 	$(call split_file,$<,$@)
 
-$(FULLTEXT_DIR)/splits/occupation/%.tsv: $(FULLTEXT_DIR)/occupation/%.tsv | $(FULLTEXT_DIR)/splits/occupation
+$(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULLTEXT)/occupation
 	$(call split_file,$<,$@)
 
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
-BACKEND   := mllm
+BACKEND   := yake
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
@@ -239,41 +240,33 @@ define train_eval
 	project=$(1); \
 	file=$(2); \
 	eval_file=$$(echo $$file | sed 's/train/eval/g'); \
-	echo "annif train -j 2 -v DEBUG '$$project' '$$file'" >> $@; \
-	echo "annif eval  -j 2 -v DEBUG '$$project' '$$eval_file' -M 'data/eval/$(RUN_DATE)_$$project.json'" >> $@
+	echo "annif train '$$project' '$$file'" >> $@; \
+	echo "annif eval  '$$project' '$$eval_file' -M 'data/eval/$(RUN_DATE)_$$project.json'" >> $@
 endef
 
-#define generate_train_eval
-#	for a in $(1); do \
-#		subdir=$$(basename "$$a" -train.tsv); \
-#		project="wikicore_$(LOCALE)_$(BACKEND)_$$subdir"; \
-#		$(call train_eval,$$project,$$a); \
-#	done
-#endef
+define generate_train_eval
+	for a in $(1); do \
+		subdir=$$(basename "$$a" -train.tsv); \
+		relative_path=$$(basename "$(OUT_DIR)"); \
+		if [ -n "$3" ]; then GROUP="$3_"; else GROUP=""; fi; \
+		project="wikicore_$(LOCALE)_$(BACKEND)_$$GROUP$$subdir"; \
+		$(call train_eval,$$project,$$relative_path/$$(basename "$$a")); \
+	done
+endef
 
-$(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR) | $(FULLTEXT_DIR) $(FULLTEXT_DIR)/splits $(FULLTEXT_DIR)/splits/class | $(FULLTEXT_DIR)/splits/occuption
+$(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR) | $(WORK_FULLTEXT) $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation
 	echo "#!/bin/bash" > $@
 	echo "#python3 -m venv annif-venv" >> $@
 	echo "#source annif-venv/bin/activate" >> $@
 	for a in $</*.nt; do \
 		subdir=$$(basename "$$a" .nt); \
-		echo "annif load-vocab 'wikicore-$(RUN_DATE)-$$subdir-$(LOCALE)' '$$a'" >> $@; \
+		relative_path=$$(basename "$(OUT_DIR)"); \
+		echo "annif load-vocab -L $(LOCALE) 'wikicore-$(RUN_DATE)-$$subdir-$(LOCALE)' '$$relative_path/$$(basename "$$a")'" >> $@; \
 	done; \
-	for b in $(FULLTEXT_DIR)/splits/*train.tsv; do \
-		subdir=$$(basename "$$b" -train.tsv); \
-		project="wikicore_$(LOCALE)_$(BACKEND)_$$subdir"; \
-		$(call train_eval,$$project,$$b); \
-	done; \
-	for c in $(FULLTEXT_DIR)/splits/class/*train.tsv; do \
-		subdir=$$(basename "$$c" -train.tsv); \
-		project="wikicore_$(LOCALE)_$(BACKEND)_class_$$subdir"; \
-		$(call train_eval,$$project,$$c); \
-	done; \
-	for d in $(FULLTEXT_DIR)/splits/occupation/*train.tsv; do \
-		subdir=$$(basename "$$d" -train.tsv); \
-		project="wikicore_$(LOCALE)_$(BACKEND)_occupation_$$subdir"; \
-		$(call train_eval,$$project,$$d); \
-	done
+	$(call generate_train_eval,$(OUT_FULLTEXT)/*train.tsv); \
+	$(call generate_train_eval,$(OUT_FULLTEXT)/class/*train.tsv,class); \
+	$(call generate_train_eval,$(OUT_FULLTEXT)/occupation/*train.tsv,occupation); \
+	ln -s $(ANNIF_DIR) projects.d;
 	
 # -----------------------
 # Main targets
@@ -282,25 +275,21 @@ core:       $(OUT_DIR)/core.nt
 class:      $(OUT_DIR)/class.nt
 occupation: $(OUT_DIR)/occupation.nt
 
-#fulltext:   $(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/class/%.tsv,$(CLASS_FILES)) \
-#			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
-#			$(FULLTEXT_DIR)/core.tsv \
-
-splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/splits/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/splits/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(FULLTEXT_DIR)/splits/core.tsv \
+fulltext: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+			$(OUT_FULLTEXT)/core.tsv \
 
 annif:		$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
 			$(ANNIF_DIR)/projects_core.cfg \
-#			$(ANNIF_DIR)/test-train-eval.sh \
+			$(ANNIF_DIR)/test-train-eval.sh \
 
 # GZip files so they're small enough to commit to GitHub
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
-	find $(FULLTEXT_DIR) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
 skos: core class occupation
-all: skos splits
+all: skos fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
