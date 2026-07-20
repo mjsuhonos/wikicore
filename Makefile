@@ -21,20 +21,23 @@ OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
 ANNIF_DIR        := $(OUT_DIR)/annif
 FULLTEXT_DIR     := $(OUT_DIR)/fulltext
 
-$(WORK_DIR) $(OUT_DIR) $(WORK_DIR)/occupation $(OUT_DIR)/occupation $(WORK_DIR)/class $(OUT_DIR)/class:
+$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class:
+	mkdir -p $@
+
+$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class:
 	mkdir -p $@
 
 $(FULLTEXT_DIR) $(ANNIF_DIR) $(FULLTEXT_DIR)/class $(FULLTEXT_DIR)/occupation  $(FULLTEXT_DIR)/splits $(FULLTEXT_DIR)/splits/class $(FULLTEXT_DIR)/splits/occupation:
 	mkdir -p $@
 
 # Inputs
-CLEANED_GZ       := $(SOURCE_DIR)/wikidata-20251229-cleaned.gz
+WIKIDATA_GZ       := $(SOURCE_DIR)/wikidata-20260706-all.nt.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
 # Extracted gzip files
 SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
-SITELINKS_NT     := $(WORK_DIR)/wikidata-sitelinks.nt
+SITELINKS_NT     := $(WORK_DIR)/sitelinks_wikidata.nt
 SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
 
 # 1. Extract URIs with Wikipedia sitelinks (~11M filter)
@@ -43,10 +46,9 @@ $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR) $(OUT_DIR)
 
 # 2. Extract N-triples with subject URIs having sitelinks (~28M total)
 # FIXME: slow! perhaps chunk and parallelize?
-$(SITELINKS_NT): $(CLEANED_GZ) $(SITELINKS_FILE)
+$(SITELINKS_NT): $(WIKIDATA_GZ) $(SITELINKS_FILE)
 	pigz -dc $< \
-		| rg -e '/prop/direct/P31>' -e '/prop/direct/P279>' -e '/prop/direct/P361>' -e '/prop/direct/P106>' -e 'skos/core#.*"@$(LOCALE) \.' \
-		| rg -F -v '_:' \
+		| rg -e '/prop/direct/(P31|P279|P361|P106)>|skos/core#.*"@(mul|$(LOCALE)) \.' \
 		| awk -v sf=$(SITELINKS_FILE) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		> $@
 
@@ -68,7 +70,7 @@ PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
 
 # 3. Extract localized labels (~14M English)
 $(SKOS_LABELS_NT): $(SITELINKS_NT)
-	rg 'skos/core#.*"@$(LOCALE) \.' $< | LC_ALL=C sort -u > $@
+	rg 'skos/core#.*"@(mul|$(LOCALE)) \.' $< | LC_ALL=C sort -u > $@
 
 # 4. Extract subclass_of (core) properties (~428K)
 $(PROPS_P279_NT): $(SITELINKS_NT)
@@ -95,12 +97,14 @@ define generate_skos_nt
 	echo "<$$SUBJECT_URI/$$BASE> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#ConceptScheme> ." > $2 ; \
 	sed "s|.*|& <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/2004/02/skos/core#Concept> .\n& <http://www.w3.org/2004/02/skos/core#inScheme> <$$SUBJECT_URI/$$BASE> .|" $1 >> $2
 	LC_ALL=C join $1 $(SKOS_LABELS_NT) >> $2
-	LC_ALL=C join $1 $(PROPS_P361_NT) | sed 's|<http://www.wikidata.org/prop/direct/P361>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2
-	LC_ALL=C join $1 $(PROPS_P279_NT) | sed 's|<http://www.wikidata.org/prop/direct/P279>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2
+	if [ -z "$3" ]; then \
+		LC_ALL=C join $1 $(PROPS_P361_NT) | sed 's|<http://www.wikidata.org/prop/direct/P361>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2 ; \
+		LC_ALL=C join $1 $(PROPS_P279_NT) | sed 's|<http://www.wikidata.org/prop/direct/P279>|<http://www.w3.org/2004/02/skos/core#broader>|g' >> $2 ; \
+	fi
 endef
 
 # Generate URI lists for each concept (non-instance)
-$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
 # Make SKOS output for core concepts
@@ -176,11 +180,6 @@ $(FULLTEXT_DIR)/splits/class/%.tsv: $(FULLTEXT_DIR)/class/%.tsv | $(FULLTEXT_DIR
 $(FULLTEXT_DIR)/splits/occupation/%.tsv: $(FULLTEXT_DIR)/occupation/%.tsv | $(FULLTEXT_DIR)/splits/occupation
 	$(call split_file,$<,$@)
 
-# GZip files so they're small enough to commit to GitHub
-compress:
-	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
-	find $(FULLTEXT_DIR) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
-
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
@@ -235,30 +234,41 @@ $(ANNIF_DIR)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_DIR)
 $(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 	$(call generate_project,$<)
 
+# FIXME: strip leading path from $file
 define train_eval
 	project=$(1); \
 	file=$(2); \
 	eval_file=$$(echo $$file | sed 's/train/eval/g'); \
-	echo "annif train '$$project' '$$file'" >> $@; \
-	echo "annif eval '$$project' '$$eval_file' -M 'data/eval/$(RUN_DATE)_$$project.json'" >> $@
+	echo "annif train -j 2 -v DEBUG '$$project' '$$file'" >> $@; \
+	echo "annif eval  -j 2 -v DEBUG '$$project' '$$eval_file' -M 'data/eval/$(RUN_DATE)_$$project.json'" >> $@
 endef
 
-$(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR)
+#define generate_train_eval
+#	for a in $(1); do \
+#		subdir=$$(basename "$$a" -train.tsv); \
+#		project="wikicore_$(LOCALE)_$(BACKEND)_$$subdir"; \
+#		$(call train_eval,$$project,$$a); \
+#	done
+#endef
+
+$(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR) | $(FULLTEXT_DIR) $(FULLTEXT_DIR)/splits $(FULLTEXT_DIR)/splits/class | $(FULLTEXT_DIR)/splits/occuption
 	echo "#!/bin/bash" > $@
+	echo "#python3 -m venv annif-venv" >> $@
+	echo "#source annif-venv/bin/activate" >> $@
 	for a in $</*.nt; do \
 		subdir=$$(basename "$$a" .nt); \
 		echo "annif load-vocab 'wikicore-$(RUN_DATE)-$$subdir-$(LOCALE)' '$$a'" >> $@; \
-	done
+	done; \
 	for b in $(FULLTEXT_DIR)/splits/*train.tsv; do \
 		subdir=$$(basename "$$b" -train.tsv); \
 		project="wikicore_$(LOCALE)_$(BACKEND)_$$subdir"; \
 		$(call train_eval,$$project,$$b); \
-	done
+	done; \
 	for c in $(FULLTEXT_DIR)/splits/class/*train.tsv; do \
 		subdir=$$(basename "$$c" -train.tsv); \
 		project="wikicore_$(LOCALE)_$(BACKEND)_class_$$subdir"; \
 		$(call train_eval,$$project,$$c); \
-	done
+	done; \
 	for d in $(FULLTEXT_DIR)/splits/occupation/*train.tsv; do \
 		subdir=$$(basename "$$d" -train.tsv); \
 		project="wikicore_$(LOCALE)_$(BACKEND)_occupation_$$subdir"; \
@@ -272,9 +282,9 @@ core:       $(OUT_DIR)/core.nt
 class:      $(OUT_DIR)/class.nt
 occupation: $(OUT_DIR)/occupation.nt
 
-fulltext:   $(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
-			$(FULLTEXT_DIR)/core.tsv \
+#fulltext:   $(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/class/%.tsv,$(CLASS_FILES)) \
+#			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+#			$(FULLTEXT_DIR)/core.tsv \
 
 splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/splits/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(FULLTEXT_DIR)/splits/occupation/%.tsv,$(OCCUPATION_FILES)) \
@@ -283,8 +293,14 @@ splits: 	$(patsubst $(ROOT_DIR)/class/%.tsv,$(FULLTEXT_DIR)/splits/class/%.tsv,$
 annif:		$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
 			$(ANNIF_DIR)/projects_core.cfg \
-			$(ANNIF_DIR)/test-train-eval.sh \
+#			$(ANNIF_DIR)/test-train-eval.sh \
 
-all: core class occupation fulltext splits annif
+# GZip files so they're small enough to commit to GitHub
+compress:
+	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
+	find $(FULLTEXT_DIR) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+
+skos: core class occupation
+all: skos splits
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
