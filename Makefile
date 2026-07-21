@@ -246,10 +246,10 @@ endef
 
 define generate_train_eval
 	for a in $(1); do \
+		prefix=$(2); \
 		subdir=$$(basename "$$a" -train.tsv); \
 		relative_path=$$(basename "$(OUT_DIR)"); \
-		if [ -n "$3" ]; then GROUP="$3_"; else GROUP=""; fi; \
-		project="wikicore_$(LOCALE)_$(BACKEND)_$$GROUP$$subdir"; \
+		project="wikicore_$(LOCALE)_$(BACKEND)_$$prefix$${prefix:+_}$$subdir"; \
 		$(call train_eval,$$project,$$relative_path/$$(basename "$$a")); \
 	done
 endef
@@ -288,6 +288,12 @@ annif:		$(ANNIF_DIR)/projects_class.cfg \
 compress:
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+
+# Recreate working environment for Annif
+decompress:
+	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
+	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
+	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
 
 skos: core class occupation
 all: skos fulltext
