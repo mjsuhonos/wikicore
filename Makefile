@@ -71,7 +71,7 @@ PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
 
 # 3. Extract localized labels (~14M English)
 $(SKOS_LABELS_NT): $(SITELINKS_NT)
-	rg 'skos/core#.*"@(mul|$(LOCALE)) \.' $< | LC_ALL=C sort -u > $@
+	rg 'skos/core#.*"@(mul|$(LOCALE)) \.' $< | sed 's/@mul/@$(LOCALE)/g' | LC_ALL=C sort -u > $@
 
 # 4. Extract subclass_of (core) properties (~428K)
 $(PROPS_P279_NT): $(SITELINKS_NT)
@@ -292,8 +292,8 @@ compress:
 # Recreate working environment for Annif
 decompress:
 	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
-	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
-	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
+	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt \;
+	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt \;
 
 skos: core class occupation
 all: skos fulltext
