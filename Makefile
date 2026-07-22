@@ -32,7 +32,7 @@ $(ANNIF_DIR):
 	mkdir -p $@
 
 # Inputs
-WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260706-all.nt.gz
+WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz # eg. wikidata-20260706-all.nt.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
@@ -184,7 +184,7 @@ $(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULL
 # -----------------------
 # Reusable Annif project generator
 # -----------------------
-BACKEND   := yake
+BACKEND   := mllm
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
@@ -266,7 +266,7 @@ $(ANNIF_DIR)/test-train-eval.sh: $(OUT_DIR) | $(WORK_FULLTEXT) $(OUT_FULLTEXT) $
 	$(call generate_train_eval,$(OUT_FULLTEXT)/*train.tsv); \
 	$(call generate_train_eval,$(OUT_FULLTEXT)/class/*train.tsv,class); \
 	$(call generate_train_eval,$(OUT_FULLTEXT)/occupation/*train.tsv,occupation); \
-	ln -s $(ANNIF_DIR) projects.d;
+	#ln -s $(ANNIF_DIR) projects.d;
 	
 # -----------------------
 # Main targets
@@ -285,7 +285,7 @@ annif:		$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/test-train-eval.sh \
 
 # GZip files so they're small enough to commit to GitHub
-compress:
+compress: $(OUT_DIR) $(OUT_FULLTEXT)
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
