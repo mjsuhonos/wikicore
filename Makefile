@@ -26,7 +26,8 @@ ANNIF_DIR        := $(OUT_DIR)/annif
 EVAL_DIR         := $(ROOT_DIR)/data/eval
 
 # Inputs
-WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz # eg. wikidata-20260706-all.nt.gz
+# eg. wikidata-20260706-all.nt.gz
+WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz
 SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
 FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
@@ -287,10 +288,10 @@ train:		$(ANNIF_DIR)/.trained_core \
 
 # GitHub GZip targets
 compress: $(OUT_DIR) $(OUT_FULLTEXT)
-	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
-	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {}
+	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {}
 
 decompress:
-	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
-	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt \;
-	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt \;
+	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {}
+	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
+	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
