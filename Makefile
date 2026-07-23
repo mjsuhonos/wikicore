@@ -17,20 +17,13 @@ ROOT_DIR         := $(PWD)
 SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
+OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
+CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
 
 WORK_FULLTEXT    := $(WORK_DIR)/fulltext
 OUT_FULLTEXT     := $(OUT_DIR)/fulltext
 ANNIF_DIR        := $(OUT_DIR)/annif
-EVAL_DIR         := $(OUT_DIR)/data/eval
-
-$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation:
-	mkdir -p $@
-
-$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation:
-	mkdir -p $@
-
-$(ANNIF_DIR):
-	mkdir -p $@
+EVAL_DIR         := $(ROOT_DIR)/data/eval
 
 # Inputs
 WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz # eg. wikidata-20260706-all.nt.gz
@@ -41,6 +34,15 @@ FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
 SITELINKS_NT     := $(WORK_DIR)/sitelinks_wikidata.nt
 SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
+
+$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation:
+	mkdir -p $@
+
+$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation:
+	mkdir -p $@
+
+$(ANNIF_DIR):
+	mkdir -p $@
 
 # 1. Extract URIs with Wikipedia sitelinks (~11M filter)
 $(SITELINKS_FILE): $(SITELINKS_GZ) | $(WORK_DIR) $(OUT_DIR)
@@ -113,9 +115,6 @@ $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROP
 $(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
 	$(call generate_skos_nt,$<,$@)
 
-# -----------------------
-OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
-# -----------------------
 # Generate URI lists for each occupation
 $(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
@@ -130,9 +129,6 @@ $(OUT_DIR)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_DIR)/occupation |
 $(OUT_DIR)/occupation.nt: $(OUT_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
 	cat $</* | LC_ALL=C sort -u >> $@
 
-# -----------------------
-CLASS_FILES := $(wildcard $(ROOT_DIR)/class/*.tsv)
-# -----------------------
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
@@ -147,9 +143,7 @@ $(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_
 $(OUT_DIR)/class.nt: $(OUT_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
 	cat $</* | LC_ALL=C sort -u >> $@
 
-# -----------------------
 # Reusable training split generator
-# -----------------------
 define split_file
 	input="$(2)"; \
 	dir=$$(dirname "$$input"); \
@@ -182,10 +176,9 @@ $(OUT_FULLTEXT)/class/%.tsv: $(WORK_FULLTEXT)/class/%.tsv | $(OUT_FULLTEXT)/clas
 $(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULLTEXT)/occupation
 	$(call split_file,$<,$@)
 
-# -----------------------
 # Reusable Annif project generator
-# -----------------------
-BACKEND   := dummy
+BACKEND   := mllm
+# Fixme: fails to generate core vocab name correctly (prefix behaviour)
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
@@ -236,31 +229,38 @@ $(ANNIF_DIR)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_DIR)
 $(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 	$(call generate_project,$<)
 
-$(ANNIF_DIR)/.annif_loaded: $(ROOT_DIR)
+$(ANNIF_DIR)/.annif_loaded: $(OUT_DIR)
 	#ln -s $(ANNIF_DIR) projects.d
-	#python3 -m venv annif-venv
-	#source annif-venv/bin/activate; \
+	python3 -m venv annif-venv
+	source annif-venv/bin/activate; \
 	for a in $</*.nt; do \
 		vocab=wikicore-$(RUN_DATE)-$$(basename "$$a" .nt)-$(LOCALE); \
 		annif load-vocab -f -v DEBUG -L $(LOCALE) $$vocab $$a; \
 	done
 	touch $@
 
-$(ANNIF_DIR)/.trained_%: $(OUT_FULLTEXT)/%-train.tsv | $(OUT_FULLTEXT)
-	echo annif train "wikicore_$(LOCALE)_$(BACKEND)_$$(basename $< -train.tsv)" $<; \
-	echo annif eval $$project $$(echo $< | sed 's/train/eval/g') -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+$(ANNIF_DIR)/.trained_%: $(OUT_FULLTEXT)/%-train.tsv | $(OUT_FULLTEXT) #$(ANNIF_DIR)/.annif_loaded
+	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
+	project="wikicore_$(LOCALE)_$(BACKEND)_$$prefix"; \
+	annif train -v DEBUG $$project $<; \
+	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	touch $@
 
-$(ANNIF_DIR)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FULLTEXT)/class
-	echo annif train "wikicore_$(LOCALE)_$(BACKEND)_class_$$(basename $< -train.tsv)" $<; \
-	echo annif eval $$project $$(echo $< | sed 's/train/eval/g') -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+$(ANNIF_DIR)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FULLTEXT)/class #$(ANNIF_DIR)/.annif_loaded
+	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
+	project="wikicore_$(LOCALE)_$(BACKEND)_class_$$prefix"; \
+	annif train -v DEBUG $$project $<; \
+	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	touch $@
 
-$(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation
-	echo annif train "wikicore_$(LOCALE)_$(BACKEND)_occupation_$$(basename $< -train.tsv)" $<; \
-	echo annif eval $$project $$(echo $< | sed 's/train/eval/g') -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+$(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation #$(ANNIF_DIR)/.annif_loaded
+	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
+	project="wikicore_$(LOCALE)_$(BACKEND)_occupation_$$prefix"; \
+	annif train -v DEBUG $$project $<; \
+	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	touch $@
 
-# -----------------------
 # Main targets
-# -----------------------
 all: skos fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
@@ -274,6 +274,7 @@ fulltext: 	$(OUT_FULLTEXT)/core.tsv \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 
+# Annif targets
 annif:		$(ANNIF_DIR)/projects_core.cfg \
 			$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
@@ -284,12 +285,11 @@ train:		$(ANNIF_DIR)/.trained_core \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_DIR)/.trained_class_%,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_DIR)/.trained_occupation_%,$(OCCUPATION_FILES)) \
 
-# GZip files so they're small enough to commit to GitHub
+# GitHub GZip targets
 compress: $(OUT_DIR) $(OUT_FULLTEXT)
 	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
 
-# Recreate working environment for Annif
 decompress:
 	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
 	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt \;
