@@ -231,9 +231,11 @@ $(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 	$(call generate_project,$<)
 
 $(ANNIF_DIR)/.annif_loaded: $(OUT_DIR)
+	# Edit below as required to suit your environment:
+	#
 	#ln -s $(ANNIF_DIR) projects.d
-	python3 -m venv annif-venv
-	source annif-venv/bin/activate; \
+	#python3 -m venv annif-venv
+	#source annif-venv/bin/activate; \
 	for a in $</*.nt; do \
 		vocab=wikicore-$(RUN_DATE)-$$(basename "$$a" .nt)-$(LOCALE); \
 		annif load-vocab -f -v DEBUG -L $(LOCALE) $$vocab $$a; \
@@ -261,7 +263,7 @@ $(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(O
 	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
 
-# Main targets
+# Build targets
 all: skos fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
