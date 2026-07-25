@@ -5,12 +5,12 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 
-# -----------------------
 # Options
-# -----------------------
 LOCALE    ?= en
 RUN_DATE  := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
+# Reusable Annif project generator
+BACKEND   ?= mllm
 
 # Paths
 ROOT_DIR         := $(PWD)
@@ -64,9 +64,7 @@ $(SITELINKS_WD5M): $(FULLTEXT_GZ)
 		| LC_ALL=C sort -u \
 		> $@
 
-# -----------------------
 # Wikidata files
-# -----------------------
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
 PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
 PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
@@ -93,9 +91,7 @@ $(PROPS_P31_NT): $(SITELINKS_NT)
 $(PROPS_P106_NT): $(SITELINKS_NT)
 	rg -F -e '/prop/direct/P106>' $< | LC_ALL=C sort -u > $@
 
-# -----------------------
 # Reusable SKOS generator
-# -----------------------
 define generate_skos_nt
 	BASE="$$(basename $1 .tsv)" ; \
 	if [ -n "$3" ]; then SUBJECT_URI="$(VOCAB_URI)/$3"; else SUBJECT_URI="$(VOCAB_URI)"; fi ; \
@@ -177,9 +173,7 @@ $(OUT_FULLTEXT)/class/%.tsv: $(WORK_FULLTEXT)/class/%.tsv | $(OUT_FULLTEXT)/clas
 $(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULLTEXT)/occupation
 	$(call split_file,$<,$@)
 
-# Reusable Annif project generator
-BACKEND   := mllm
-# Fixme: fails to generate core vocab name correctly (prefix behaviour)
+# FIXME: fails to generate core vocab name correctly (prefix behaviour)
 define generate_project
 	a=$(1); \
 	prefix=$(2); \
