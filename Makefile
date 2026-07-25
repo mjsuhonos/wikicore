@@ -9,7 +9,6 @@ SHELL := /bin/bash
 LOCALE    ?= en
 RUN_DATE  := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
-# Reusable Annif project generator
 BACKEND   ?= mllm
 
 # Paths
@@ -173,6 +172,7 @@ $(OUT_FULLTEXT)/class/%.tsv: $(WORK_FULLTEXT)/class/%.tsv | $(OUT_FULLTEXT)/clas
 $(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULLTEXT)/occupation
 	$(call split_file,$<,$@)
 
+# Reusable Annif project generator
 # FIXME: fails to generate core vocab name correctly (prefix behaviour)
 define generate_project
 	subdir=$$(basename $(1) .tsv); \
@@ -228,38 +228,38 @@ $(ANNIF_DIR)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_DIR)
 
 $(ANNIF_DIR)/.loaded_%: $(OUT_DIR)/%.nt | $(ANNIF_DIR)
 	vocab="wikicore-$(RUN_DATE)-$$(basename $< .nt)-$(LOCALE)"; \
-	annif load-vocab -f -v DEBUG -L $(LOCALE) $$vocab $<;
+	annif load-vocab -p $(ANNIF_DIR) -f -v DEBUG -L $(LOCALE) $$vocab $<;
 	touch $@
 
 $(ANNIF_DIR)/.loaded_class_%: $(OUT_DIR)/class/%.nt | $(ANNIF_DIR)
 	vocab="wikicore-$(RUN_DATE)-class-$$(basename $< .nt)-$(LOCALE)"; \
-	annif load-vocab -f -v DEBUG -L $(LOCALE) $$vocab $<;
+	annif load-vocab -p $(ANNIF_DIR) -f -v DEBUG -L $(LOCALE) $$vocab $<;
 	touch $@
 
 $(ANNIF_DIR)/.loaded_occupation_%: $(OUT_DIR)/occupation/%.nt | $(ANNIF_DIR)
 	vocab="wikicore-$(RUN_DATE)-occupation-$$(basename $< .nt)-$(LOCALE)"; \
-	annif load-vocab -f -v DEBUG -L $(LOCALE) $$vocab $<;
+	annif load-vocab -p $(ANNIF_DIR) -f -v DEBUG -L $(LOCALE) $$vocab $<;
 	touch $@
 
 $(ANNIF_DIR)/.trained_%: $(OUT_FULLTEXT)/%-train.tsv | $(OUT_FULLTEXT)
 	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
 	project="wikicore_$(LOCALE)_$(BACKEND)_$$prefix"; \
-	annif train -v DEBUG $$project $<; \
-	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	annif train -p $(ANNIF_DIR) -v DEBUG $$project $<; \
+	annif eval  -p $(ANNIF_DIR) -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
 
 $(ANNIF_DIR)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FULLTEXT)/class
 	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
 	project="wikicore_$(LOCALE)_$(BACKEND)_class_$$prefix"; \
-	annif train -v DEBUG $$project $<; \
-	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	annif train -p $(ANNIF_DIR) -v DEBUG $$project $<; \
+	annif eval  -p $(ANNIF_DIR) -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
 
 $(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation
 	@prefix="$$(basename "$<" | sed 's/-train\.tsv$$//')"; \
 	project="wikicore_$(LOCALE)_$(BACKEND)_occupation_$$prefix"; \
-	annif train -v DEBUG $$project $<; \
-	annif eval  -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
+	annif train -p $(ANNIF_DIR) -v DEBUG $$project $<; \
+	annif eval  -p $(ANNIF_DIR) -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
 
 # Build targets
@@ -281,7 +281,6 @@ annif:		$(ANNIF_DIR)/projects_core.cfg \
 			$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
 
-#ln -s $(ANNIF_DIR) projects.d
 load:		$(ANNIF_DIR)/.loaded_core \
 			$(ANNIF_DIR)/.loaded_class \
 			$(ANNIF_DIR)/.loaded_occupation \
