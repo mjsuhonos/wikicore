@@ -1,9 +1,9 @@
 # Wiki Core
 
-Makefile pipeline to extract SKOS controlled vocabularies from Wikidata RDF dump, build fulltext corpora from the WD5M dataset, and load/train/evaluate vocabularies using the Annif toolkit.
+Makefile toolkit to extract SKOS controlled vocabularies from Wikidata RDF dump, build fulltext corpora from the WD5M dataset, and load/train/evaluate vocabularies using the Annif toolkit.
 
-## Targets
-### skos
+## SKOS targets
+### vocab
 Generates vocabularies as SKOS files:
 - class (41)
 - occupation (19)
@@ -13,13 +13,14 @@ Generates vocabularies as SKOS files:
 Generates test/train/eval splits for each vocabulary using WD5M as fulltext source.
 
 ### all
-Generate both skos and fulltext.
+Generate both vocabs and fulltext.
 
-### annif
-Generate Annif project configurations for vocabularies.
+## Annif targets
+### config
+Generate Annif project configurations.
 
 ### load
-Load vocabularies using "annif load-vocab"
+Load vocabularies into Annif.
 
 ### train
-Train vocabularies using "annif train" with fulltext "train" files.  Evaluate vocabularies using "annif eval" with fulltext "eval" files.
+Train and evaluate vocabularies with Annif using fulltext files.

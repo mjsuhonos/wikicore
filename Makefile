@@ -1,5 +1,5 @@
 # -----------------------
-# Wiki Core processing pipeline
+# Wiki Core toolkit
 # -----------------------
 
 SHELL := /bin/bash
@@ -263,21 +263,21 @@ $(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(O
 	touch $@
 
 # Build targets
-all: skos fulltext
+all: vocab fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
 
 core:		$(OUT_DIR)/core.nt
 class:		$(OUT_DIR)/class.nt
 occupation:	$(OUT_DIR)/occupation.nt
-skos:		core class occupation
+vocab:		core class occupation
 
 fulltext: 	$(OUT_FULLTEXT)/core.tsv \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 
 # Annif targets
-annif:		$(ANNIF_DIR)/projects_core.cfg \
+config:		$(ANNIF_DIR)/projects_core.cfg \
 			$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \
 
