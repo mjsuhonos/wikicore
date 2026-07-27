@@ -262,21 +262,26 @@ $(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(O
 	annif eval  -p $(ANNIF_DIR) -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
 
-# Build targets
-all: vocab fulltext
+# SKOS targets
+skos: vocab fulltext
 	@echo "  LOCALE=$(LOCALE)"
 	@echo "  RUN_DATE=$(RUN_DATE)"
 
+vocab:		core class occupation
 core:		$(OUT_DIR)/core.nt
 class:		$(OUT_DIR)/class.nt
 occupation:	$(OUT_DIR)/occupation.nt
-vocab:		core class occupation
 
 fulltext: 	$(OUT_FULLTEXT)/core.tsv \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 
 # Annif targets
+annif: config load train
+	@echo "  LOCALE=$(LOCALE)"
+	@echo "  RUN_DATE=$(RUN_DATE)"
+	@echo "  BACKEND=$(BACKEND)"
+
 config:		$(ANNIF_DIR)/projects_core.cfg \
 			$(ANNIF_DIR)/projects_class.cfg \
 			$(ANNIF_DIR)/projects_occupation.cfg \

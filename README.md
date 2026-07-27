@@ -12,7 +12,7 @@ Generates vocabularies as SKOS files:
 ### fulltext
 Generates test/train/eval splits for each vocabulary using WD5M as fulltext source.
 
-### all
+### skos
 Generate both vocabs and fulltext.
 
 ## Annif targets
@@ -24,3 +24,13 @@ Load vocabularies into Annif.
 
 ### train
 Train and evaluate vocabularies with Annif using fulltext files.
+
+### annif
+Generate configs, load vocabs, and train models.
+
+## Utility targets
+### compress
+Compress vocabs and fulltext using pigz.
+
+### decompress
+Extract vocabs and fulltext (cloned from GitHub) using pigz.
