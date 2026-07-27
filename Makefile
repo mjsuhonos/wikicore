@@ -301,24 +301,12 @@ define annif_load
 	$(eval class = $(word 2,$(extracted)))
 
 	$(if $(filter-out $(shell basename $(OUT_DIR)),$(prefix)),\
-		$(eval vocab = wikicore_$(RUN_DATE)_$(prefix)_$(class)_$(LOCALE)),\
-		$(eval vocab = wikicore_$(RUN_DATE)_$(class)_$(LOCALE))\
+		$(eval vocab = wikicore-$(RUN_DATE)-$(prefix)-$(class)-$(LOCALE)),\
+		$(eval vocab = wikicore-$(RUN_DATE)-$(class)-$(LOCALE))\
 	)
 
 	annif load-vocab -p $(ANNIF_DIR) -f -v DEBUG -L $(LOCALE) $(vocab) $<
 endef
-
-$(ANNIF_DIR)/.loaded_%: $(OUT_DIR)/%.nt | $(ANNIF_DIR)
-	$(call annif_load,$<)
-	touch $@
-
-$(ANNIF_DIR)/.loaded_class_%: $(OUT_DIR)/class/%.nt | $(ANNIF_DIR)
-	$(call annif_load,$<)
-	touch $@
-
-$(ANNIF_DIR)/.loaded_occupation_%: $(OUT_DIR)/occupation/%.nt | $(ANNIF_DIR)
-	$(call annif_load,$<)
-	touch $@
 
 extract_vars = $(shell echo $(1) | sed -E 's|.*/([^/]*)/([^-]*)-train.tsv|\1 \2|')
 
@@ -335,6 +323,18 @@ define annif_train
 	annif train -p $(ANNIF_DIR) -v DEBUG $(project) $<
 	annif eval  -p $(ANNIF_DIR) -v DEBUG $(project) `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(project).json
 endef
+
+$(ANNIF_DIR)/.loaded_%: $(OUT_DIR)/%.nt | $(ANNIF_DIR)
+	$(call annif_load,$<)
+	touch $@
+
+$(ANNIF_DIR)/.loaded_class_%: $(OUT_DIR)/class/%.nt | $(ANNIF_DIR)
+	$(call annif_load,$<)
+	touch $@
+
+$(ANNIF_DIR)/.loaded_occupation_%: $(OUT_DIR)/occupation/%.nt | $(ANNIF_DIR)
+	$(call annif_load,$<)
+	touch $@
 
 $(ANNIF_DIR)/.trained_%: $(OUT_FULLTEXT)/%-train.tsv | $(OUT_FULLTEXT)
 	$(call annif_train,$<)
