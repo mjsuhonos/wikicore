@@ -1,15 +1,38 @@
-# -----------------------
-# Wiki Core toolkit
-# -----------------------
-
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 
 # Options
 LOCALE    ?= en
+BACKEND   ?= mllm
 RUN_DATE  := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
-BACKEND   ?= mllm
+
+# Default (help) target
+default:
+	@echo "-----------------"
+	@echo "Wiki Core toolkit"
+	@echo "-----------------"
+	@echo "Usage: make [TARGET] [-j N] [OPTIONS]"
+	@echo "   eg. make annif -j 4 LOCALE=fr BACKEND=omikuji"
+	@echo ""
+	@echo "Targets:"
+	@echo "skos"
+	@echo "  vocab		Generate SKOS vocabs (.nt)"
+	@echo "  fulltext	Generate fulltext splits (.tsv)"
+	@echo ""
+	@echo "annif"
+	@echo "  config	Generate Annif project configs (.cfg)"
+	@echo "  load		Load vocabs into Annif"
+	@echo "  train		Train and evaluate vocabs (.json)"
+	@echo ""
+	@echo "  compress	Compress vocabs and fulltext (.gz)"
+	@echo "  decompress	Extract vocabs and fulltext"
+	@echo ""
+	@echo "Options:"
+	@echo "  -j N		Number of parallel jobs ('-j' alone means all CPUs)"
+	@echo "  RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
+	@echo "  LOCALE	Default 'en'"
+	@echo "  BACKEND	Default 'mllm'"
 
 # Paths
 ROOT_DIR         := $(PWD)
@@ -22,7 +45,7 @@ CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
 WORK_FULLTEXT    := $(WORK_DIR)/fulltext
 OUT_FULLTEXT     := $(OUT_DIR)/fulltext
 ANNIF_DIR        := $(OUT_DIR)/annif
-EVAL_DIR         := $(ROOT_DIR)/data/eval
+EVAL_DIR         := $(OUT_DIR)/data/eval
 
 # Inputs
 # eg. wikidata-20260706-all.nt.gz
@@ -35,13 +58,64 @@ SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
 SITELINKS_NT     := $(WORK_DIR)/sitelinks_wikidata.nt
 SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
 
+# Wikidata files
+SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
+PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
+PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
+PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
+PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
+
+# SKOS targets
+skos: vocab fulltext
+	@echo "  LOCALE=$(LOCALE)"
+	@echo "  RUN_DATE=$(RUN_DATE)"
+
+vocab:		core class occupation
+core:		$(OUT_DIR)/core.nt
+class:		$(OUT_DIR)/class.nt
+occupation:	$(OUT_DIR)/occupation.nt
+
+fulltext: 	$(OUT_FULLTEXT)/core.tsv \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+
+# Annif targets
+annif: config load train
+	@echo "  LOCALE=$(LOCALE)"
+	@echo "  RUN_DATE=$(RUN_DATE)"
+	@echo "  BACKEND=$(BACKEND)"
+
+config:		$(ANNIF_DIR)/projects_core.cfg \
+			$(ANNIF_DIR)/projects_class.cfg \
+			$(ANNIF_DIR)/projects_occupation.cfg \
+
+load:		$(ANNIF_DIR)/.loaded_core \
+			$(ANNIF_DIR)/.loaded_class \
+			$(ANNIF_DIR)/.loaded_occupation \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_DIR)/.loaded_class_%,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_DIR)/.loaded_occupation_%,$(OCCUPATION_FILES)) \
+
+train:		$(ANNIF_DIR)/.trained_core \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_DIR)/.trained_class_%,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_DIR)/.trained_occupation_%,$(OCCUPATION_FILES)) \
+
+# GitHub GZip targets
+compress: $(OUT_DIR) $(OUT_FULLTEXT)
+	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
+	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
+
+decompress:
+	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
+	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
+	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
+
 $(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation:
 	mkdir -p $@
 
 $(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation:
 	mkdir -p $@
 
-$(ANNIF_DIR):
+$(ANNIF_DIR) $(EVAL_DIR):
 	mkdir -p $@
 
 # 1. Extract URIs with Wikipedia sitelinks (~11M filter)
@@ -62,13 +136,6 @@ $(SITELINKS_WD5M): $(FULLTEXT_GZ)
 		| awk -v sf=$(SITELINKS_FILE) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		| LC_ALL=C sort -u \
 		> $@
-
-# Wikidata files
-SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
-PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
-PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
-PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
-PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
 
 # 3. Extract localized labels (~14M English)
 $(SKOS_LABELS_NT): $(SITELINKS_NT)
@@ -261,47 +328,3 @@ $(ANNIF_DIR)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(O
 	annif train -p $(ANNIF_DIR) -v DEBUG $$project $<; \
 	annif eval  -p $(ANNIF_DIR) -v DEBUG $$project `echo $< | sed 's/train/eval/g'` -M $(EVAL_DIR)/$(RUN_DATE)_$$project.json
 	touch $@
-
-# SKOS targets
-skos: vocab fulltext
-	@echo "  LOCALE=$(LOCALE)"
-	@echo "  RUN_DATE=$(RUN_DATE)"
-
-vocab:		core class occupation
-core:		$(OUT_DIR)/core.nt
-class:		$(OUT_DIR)/class.nt
-occupation:	$(OUT_DIR)/occupation.nt
-
-fulltext: 	$(OUT_FULLTEXT)/core.tsv \
-			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
-
-# Annif targets
-annif: config load train
-	@echo "  LOCALE=$(LOCALE)"
-	@echo "  RUN_DATE=$(RUN_DATE)"
-	@echo "  BACKEND=$(BACKEND)"
-
-config:		$(ANNIF_DIR)/projects_core.cfg \
-			$(ANNIF_DIR)/projects_class.cfg \
-			$(ANNIF_DIR)/projects_occupation.cfg \
-
-load:		$(ANNIF_DIR)/.loaded_core \
-			$(ANNIF_DIR)/.loaded_class \
-			$(ANNIF_DIR)/.loaded_occupation \
-			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_DIR)/.loaded_class_%,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_DIR)/.loaded_occupation_%,$(OCCUPATION_FILES)) \
-
-train:		$(ANNIF_DIR)/.trained_core \
-			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_DIR)/.trained_class_%,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_DIR)/.trained_occupation_%,$(OCCUPATION_FILES)) \
-
-# GitHub GZip targets
-compress: $(OUT_DIR) $(OUT_FULLTEXT)
-	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
-	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.tsv" -exec pigz -k -f {} \;
-
-decompress:
-	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
-	cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
-	cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
