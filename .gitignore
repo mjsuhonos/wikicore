@@ -6,7 +6,9 @@
 
 */class.nt.gz
 */occupation.nt.gz
+*/data/vocabs
 
+*/annif/.*
 projects.d
-data
 annif-venv
+/data
