@@ -19,7 +19,7 @@ Generate both skos and fulltext.
 Generate Annif project configurations for vocabularies.
 
 ### load
-Load vocabularies using "annif load-vocab"
+Load vocabularies into Annif.
 
 ### train
-Train vocabularies using "annif train" with fulltext "train" files.  Evaluate vocabularies using "annif eval" with fulltext "eval" files.
+Train and evaluate vocabularies with Annif using fulltext files.
