@@ -7,6 +7,37 @@ BACKEND   ?= mllm
 RUN_DATE  := $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 
+# Paths
+ROOT_DIR         := $(PWD)
+SOURCE_DIR       := $(ROOT_DIR)/source.nosync
+WORK_DIR         := $(ROOT_DIR)/working.nosync
+OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
+OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
+CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
+
+# Inputs			eg. wikidata-20260706-all.nt.gz
+WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz
+SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
+FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
+
+# Extracted gzip files
+SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
+SITELINKS_NT     := $(WORK_DIR)/sitelinks_wikidata.nt
+SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
+
+# SKOS files
+SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
+PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
+PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
+PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
+PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
+WORK_FULLTEXT    := $(WORK_DIR)/fulltext
+OUT_FULLTEXT     := $(OUT_DIR)/fulltext
+
+# Annif files
+ANNIF_DIR        := $(OUT_DIR)/annif
+EVAL_DIR         := $(OUT_DIR)/data/eval
+
 # Default (help) target
 default:
 	@echo "-----------------"
@@ -34,41 +65,10 @@ default:
 	@echo "  LOCALE	Default 'en'"
 	@echo "  BACKEND	Default 'mllm'"
 
-# Paths
-ROOT_DIR         := $(PWD)
-SOURCE_DIR       := $(ROOT_DIR)/source.nosync
-WORK_DIR         := $(ROOT_DIR)/working.nosync
-OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
-OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
-CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
-
-WORK_FULLTEXT    := $(WORK_DIR)/fulltext
-OUT_FULLTEXT     := $(OUT_DIR)/fulltext
-ANNIF_DIR        := $(OUT_DIR)/annif
-EVAL_DIR         := $(OUT_DIR)/data/eval
-
-# Inputs
-# eg. wikidata-20260706-all.nt.gz
-WIKIDATA_GZ      := $(SOURCE_DIR)/sitelinks_wikidata.nt.gz
-SITELINKS_GZ     := $(SOURCE_DIR)/sitelinks_en.tsv.gz
-FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
-
-# Extracted gzip files
-SITELINKS_FILE   := $(WORK_DIR)/sitelinks_en_uris.tsv
-SITELINKS_NT     := $(WORK_DIR)/sitelinks_wikidata.nt
-SITELINKS_WD5M   := $(WORK_DIR)/sitelinks_wd5m.tsv
-
-# Wikidata files
-SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
-PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
-PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
-PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
-PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
-
 # SKOS targets
-skos: vocab fulltext
-	@echo "  LOCALE=$(LOCALE)"
-	@echo "  RUN_DATE=$(RUN_DATE)"
+skos:		vocab fulltext
+			@echo "  LOCALE=$(LOCALE)"
+			@echo "  RUN_DATE=$(RUN_DATE)"
 
 vocab:		core class occupation
 core:		$(OUT_DIR)/core.nt
@@ -80,10 +80,10 @@ fulltext: 	$(OUT_FULLTEXT)/core.tsv \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
 
 # Annif targets
-annif: config load train
-	@echo "  LOCALE=$(LOCALE)"
-	@echo "  RUN_DATE=$(RUN_DATE)"
-	@echo "  BACKEND=$(BACKEND)"
+annif:		config load train
+			@echo "  LOCALE=$(LOCALE)"
+			@echo "  RUN_DATE=$(RUN_DATE)"
+			@echo "  BACKEND=$(BACKEND)"
 
 config:		$(ANNIF_DIR)/projects_core.cfg \
 			$(ANNIF_DIR)/projects_class.cfg \
@@ -152,10 +152,18 @@ $(PROPS_P361_NT): $(SITELINKS_NT)
 # 4. Extract instance_of (class) properties (~10M)
 $(PROPS_P31_NT): $(SITELINKS_NT)
 	rg -F -e '/prop/direct/P31>' $< | LC_ALL=C sort -u > $@
+	#$(MAKE) $(ROOT_DIR)/class_labels.tsv
+
+$(ROOT_DIR)/class_labels.tsv: $(PROPS_P31_NT) $(SKOS_LABELS_NT)
+	rg prefLabel $(SKOS_LABELS_NT) | awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' <(awk '{print $$3}' $< | sort | uniq -c | awk '{print $$2 "\t" $$1}' | sort -t$$'\t' -k2 -nr) - | sort -k2 -nr > $@
 
 # 4. Extract occupation properties (~3.3M)
 $(PROPS_P106_NT): $(SITELINKS_NT)
 	rg -F -e '/prop/direct/P106>' $< | LC_ALL=C sort -u > $@
+	#$(MAKE) $(ROOT_DIR)/occupation_labels.tsv
+
+$(ROOT_DIR)/occupation_labels.tsv: $(PROPS_P106_NT) $(SKOS_LABELS_NT)
+	rg prefLabel $(SKOS_LABELS_NT) | awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' <(awk '{print $$3}' $< | sort | uniq -c | awk '{print $$2 "\t" $$1}' | sort -t$$'\t' -k2 -nr) - | sort -k2 -nr > $@
 
 # Reusable SKOS generator
 define generate_skos_nt
