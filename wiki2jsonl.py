@@ -384,8 +384,7 @@ def process_batch_wrapper(args):
     batch_index, batch, wikipedia_to_wikidata, temp_files, num_workers = args
     worker_idx = batch_index % num_workers
     result_count = process_batch((batch, wikipedia_to_wikidata, temp_files[worker_idx]))
-    print(f"Completed batch {batch_index}: {result_count} documents", file=sys.stderr)
-    return result_count
+    return (batch_index, result_count)
 
 
 def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size):
@@ -403,7 +402,7 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
         for fp in temp_files:
             open(fp, 'w').close()
 
-        # Use Pool.imap_unordered for better load balancing
+        # Use Pool.imap for ordered results (enables accurate running total)
         with multiprocessing.Pool(processes=num_workers) as pool:
             # Create generator for batches (doesn't load all into memory)
             gen = batch_generator(stream, batch_size)
@@ -414,9 +413,11 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
                 for batch_idx, batch in gen
             )
             
-            # Consume the generator to process all batches
-            for _ in pool.imap_unordered(process_batch_wrapper, args_gen):
-                pass
+            # Consume the generator to process all batches, track running total
+            running_total = 0
+            for batch_idx, result_count in pool.imap(process_batch_wrapper, args_gen):
+                running_total += result_count
+                print(f"Completed batch {batch_idx}: {running_total} documents processed", file=sys.stderr)
 
         # Merge sorted temp files and output
         kway_merge_sorted_files(temp_files, sys.stdout)
@@ -428,6 +429,7 @@ def process_dump(stream, wikipedia_to_wikidata):
     batch_size = 10000
     current_batch = []
     batch_index = 0
+    running_total = 0
 
     for page in dump:
         # Namespace 0 = normal articles.
@@ -447,7 +449,8 @@ def process_dump(stream, wikipedia_to_wikidata):
                     except BrokenPipeError:
                         sys.exit(0)
                     doc_count += 1
-            print(f"Completed batch {batch_index}: {doc_count} documents", file=sys.stderr)
+            running_total += doc_count
+            print(f"Completed batch {batch_index}: {running_total} documents processed", file=sys.stderr)
             batch_index += 1
             current_batch = []
 
@@ -462,7 +465,8 @@ def process_dump(stream, wikipedia_to_wikidata):
                 except BrokenPipeError:
                     sys.exit(0)
                 doc_count += 1
-        print(f"Completed batch {batch_index}: {doc_count} documents", file=sys.stderr)
+        running_total += doc_count
+        print(f"Completed batch {batch_index}: {running_total} documents processed", file=sys.stderr)
 
 
 def parse_parallel_args():
