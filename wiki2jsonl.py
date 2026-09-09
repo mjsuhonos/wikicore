@@ -86,7 +86,7 @@ def render_node(node):
 
     if isinstance(node, Tag):
         tag = str(node.tag).lower().strip()
-        if tag in {"ref", "references", "gallery", "timeline", "math", "source", "syntaxhighlight"}:
+        if tag in {"ref", "references", "gallery", "timeline", "math", "source", "syntaxhighlight", "img", "figure", "div", "span", "table"}:
             return "", []
         if node.contents is not None:
             return render_wikicode(node.contents)
@@ -111,6 +111,8 @@ def render_wikicode(code):
 
 def clean_text(text):
     """Normalize whitespace without destroying paragraph structure."""
+    # Remove magic words like __NOTOC__, __TOC__, etc.
+    text = re.sub(r'__[A-Z_]+__', '', text)
     text = text.replace("'''", "").replace("'", "")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
@@ -307,28 +309,6 @@ def main():
 
     args = sys.argv[1:]
     positional_args = []
-    i = 0
-    while i < len(args):
-        if args[i] == '-j' and i + 1 < len(args):
-            try:
-                num_workers = int(args[i + 1])
-                i += 2
-                continue
-            except ValueError:
-                i += 1
-        elif args[i].startswith('-j') and len(args[i]) > 2:
-            try:
-                num_workers = int(args[i][2:])
-            except ValueError:
-                pass
-            i += 1
-            continue
-        else:
-            positional_args.append(args[i])
-            i += 1
-
-    if num_workers == 0:
-        num_workers = os.cpu_count()
 
     sitelinks_path = positional_args[0] if positional_args else None
 
