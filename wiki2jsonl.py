@@ -314,7 +314,7 @@ def kway_merge_sorted_filtered_files(file_paths, output_stream):
         f.close()
 
 
-def batch_generator(stream, batch_size):
+def batch_generator(stream, batch_size, max_batches=None):
     """Generator that yields batches of page data from the dump."""
     dump = mwxml.Dump.from_file(stream)
     current_batch = []
@@ -325,8 +325,10 @@ def batch_generator(stream, batch_size):
         if len(current_batch) >= batch_size:
             yield batch_index, current_batch
             batch_index += 1
+            if max_batches is not None and batch_index >= max_batches:
+                break
             current_batch = []
-    if current_batch:
+    if current_batch and (max_batches is None or batch_index < max_batches):
         yield batch_index, current_batch
 
 
@@ -338,7 +340,7 @@ def process_batch_wrapper(args):
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size):
+def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size, max_batches=10):
     """Process dump in parallel with multiple workers."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
@@ -357,7 +359,7 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
             open(fp, 'w').close()
 
         with multiprocessing.Pool(processes=num_workers) as pool:
-            gen = batch_generator(stream, batch_size)
+            gen = batch_generator(stream, batch_size, max_batches=max_batches)
             args_gen = (
                 (batch_idx, batch, wikipedia_to_wikidata, temp_files, filtered_temp_files, num_workers)
                 for batch_idx, batch in gen
