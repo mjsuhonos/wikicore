@@ -29,6 +29,11 @@ try:
 except RuntimeError:
     pass
 
+# Configuration constants
+DEFAULT_BATCH_SIZE = 5000
+DEFAULT_MAX_BATCHES = None  # Process all batches by default
+FILTERED_OUTPUT_FILE = 'filtered.jsonl'
+
 
 def wikipedia_url(title):
     """Turn a MediaWiki article title into a Wikipedia URL."""
@@ -45,12 +50,14 @@ def is_article_link(link):
 
 
 def extract_intro(code):
-    """Return everything before the first section heading."""
+    """Return everything before the first section heading, excluding templates."""
     nodes = []
     for node in code.nodes:
         if isinstance(node, Heading):
             break
-        nodes.append(node)
+        # Skip template nodes to prevent them from appearing in the output
+        if not isinstance(node, Template):
+            nodes.append(node)
     return mwparserfromhell.parse("".join(str(node) for node in nodes))
 
 
@@ -216,13 +223,18 @@ def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
     wiki_uri = wikipedia_url(page_data['title'])
     wikidata_uri = wikipedia_to_wikidata.get(wiki_uri, "")
 
-    if wikidata_uri:
-        label = page_data['title'].replace("_", " ")
-        subjects = [{"uri": wikidata_uri, "label": label}]
-        document_id = wikidata_uri.split('/')[-1]
-    else:
-        subjects = []
-        document_id = str(page_data['id'])
+    # Filter out pages without Wikidata entries
+    if not wikidata_uri:
+        return ('filtered', 'no_wikidata', {
+            'id': page_data['id'],
+            'title': page_data['title'],
+            'namespace': page_data['namespace'],
+            'reason': 'no_wikidata'
+        })
+
+    label = page_data['title'].replace("_", " ")
+    subjects = [{"uri": wikidata_uri, "label": label}]
+    document_id = wikidata_uri.split('/')[-1]
 
     return {
         "document_id": document_id,
@@ -314,7 +326,7 @@ def kway_merge_sorted_filtered_files(file_paths, output_stream):
         f.close()
 
 
-def batch_generator(stream, batch_size, max_batches=None):
+def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
     """Generator that yields batches of page data from the dump."""
     dump = mwxml.Dump.from_file(stream)
     current_batch = []
@@ -340,7 +352,7 @@ def process_batch_wrapper(args):
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size, max_batches=10):
+def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
     """Process dump in parallel with multiple workers."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
@@ -376,13 +388,14 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
         kway_merge_sorted_files(temp_files, sys.stdout)
         
         # Write filtered results to hardcoded file
-        with open('filtered.jsonl', 'w', encoding='utf-8') as filtered_out:
+        with open(FILTERED_OUTPUT_FILE, 'w', encoding='utf-8') as filtered_out:
             kway_merge_sorted_filtered_files(filtered_temp_files, filtered_out)
 
 
 def main():
     num_workers = os.cpu_count()
-    batch_size = 5000
+    batch_size = DEFAULT_BATCH_SIZE
+    max_batches = DEFAULT_MAX_BATCHES
 
     args = sys.argv[1:]
     sitelinks_path = args[0] if args else None
@@ -395,7 +408,8 @@ def main():
             stream,
             wikipedia_to_wikidata,
             num_workers=num_workers,
-            batch_size=batch_size
+            batch_size=batch_size,
+            max_batches=max_batches
         )
     finally:
         pass
