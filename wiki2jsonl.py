@@ -163,9 +163,29 @@ def extract_page_data(page):
 
 
 def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
-    """Convert page data dict to JSON Lines object."""
+    """Convert page data dict to JSON Lines object.
+    
+    Returns:
+        dict: JSON Lines object for valid pages
+        tuple: ('filtered', reason, filtered_info) for filtered pages
+    """
+    # Check filtering conditions
+    if page_data['namespace'] != 0:
+        return ('filtered', 'namespace', {
+            'id': page_data['id'],
+            'title': page_data['title'],
+            'namespace': page_data['namespace'],
+            'reason': 'namespace'
+        })
+    
     if page_data['redirect'] or page_data['text'] is None:
-        return None
+        reason = 'redirect' if page_data['redirect'] else 'no_text'
+        return ('filtered', reason, {
+            'id': page_data['id'],
+            'title': page_data['title'],
+            'namespace': page_data['namespace'],
+            'reason': reason
+        })
 
     code = mwparserfromhell.parse(page_data['text'])
     intro = extract_intro(code)
@@ -216,18 +236,40 @@ def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
 
 
 def process_batch(args):
-    """Process a batch, write sorted results to temp file, return count."""
-    batch, wikipedia_to_wikidata, temp_file_path = args
+    """Process a batch, write sorted results to temp file, return count.
+    
+    Args:
+        args: tuple of (batch, wikipedia_to_wikidata, temp_file_path, filtered_temp_file_path)
+    Returns:
+        tuple: (valid_count, filtered_count)
+    """
+    batch, wikipedia_to_wikidata, temp_file_path, filtered_temp_file_path = args
     results = []
+    filtered_results = []
+    
     for page_data in batch:
         row = page_data_to_jsonl(page_data, wikipedia_to_wikidata)
-        if row is not None:
+        if isinstance(row, tuple) and len(row) == 3 and row[0] == 'filtered':
+            # This is a filtered item
+            _, _, filtered_info = row
+            filtered_results.append((filtered_info['id'], json.dumps(filtered_info, ensure_ascii=False)))
+        elif row is not None:
+            # This is a valid result
             results.append((row['document_id'], json.dumps(row, ensure_ascii=False)))
+    
+    # Sort and write valid results
     results.sort(key=lambda x: x[0])
     with open(temp_file_path, 'a', encoding='utf-8') as f:
         for doc_id, json_line in results:
             f.write(json_line + '\n')
-    return len(results)
+    
+    # Sort and write filtered results
+    filtered_results.sort(key=lambda x: x[0])
+    with open(filtered_temp_file_path, 'a', encoding='utf-8') as f:
+        for item_id, json_line in filtered_results:
+            f.write(json_line + '\n')
+    
+    return len(results), len(filtered_results)
 
 
 def kway_merge_sorted_files(file_paths, output_stream):
@@ -251,6 +293,27 @@ def kway_merge_sorted_files(file_paths, output_stream):
         f.close()
 
 
+def kway_merge_sorted_filtered_files(file_paths, output_stream):
+    """Perform a k-way merge of sorted filtered JSONL files, outputting sorted by id."""
+    files = [open(fp, 'r', encoding='utf-8') for fp in file_paths]
+
+    def gen(file):
+        for line in file:
+            line = line.strip()
+            if line:
+                doc = json.loads(line)
+                yield (doc['id'], line)
+
+    generators = [gen(f) for f in files]
+    merged = heapq.merge(*generators, key=lambda x: x[0])
+
+    for item_id, line in merged:
+        print(line, file=output_stream)
+
+    for f in files:
+        f.close()
+
+
 def batch_generator(stream, batch_size):
     """Generator that yields batches of page data from the dump."""
     dump = mwxml.Dump.from_file(stream)
@@ -258,8 +321,6 @@ def batch_generator(stream, batch_size):
     batch_index = 0
 
     for page in dump:
-        if page.namespace != 0:
-            continue
         current_batch.append(extract_page_data(page))
         if len(current_batch) >= batch_size:
             yield batch_index, current_batch
@@ -271,10 +332,10 @@ def batch_generator(stream, batch_size):
 
 def process_batch_wrapper(args):
     """Wrapper to assign batch to correct worker temp file."""
-    batch_index, batch, wikipedia_to_wikidata, temp_files, num_workers = args
+    batch_index, batch, wikipedia_to_wikidata, temp_files, filtered_temp_files, num_workers = args
     worker_idx = batch_index % num_workers
-    result_count = process_batch((batch, wikipedia_to_wikidata, temp_files[worker_idx]))
-    return (batch_index, result_count)
+    valid_count, filtered_count = process_batch((batch, wikipedia_to_wikidata, temp_files[worker_idx], filtered_temp_files[worker_idx]))
+    return (batch_index, valid_count, filtered_count)
 
 
 def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size):
@@ -284,6 +345,13 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
             os.path.join(temp_dir, f'worker_{i}.jsonl')
             for i in range(num_workers)
         ]
+        
+        filtered_temp_files = [
+            os.path.join(temp_dir, f'worker_{i}.filtered.jsonl')
+            for i in range(num_workers)
+        ]
+        for fp in filtered_temp_files:
+            open(fp, 'w').close()
 
         for fp in temp_files:
             open(fp, 'w').close()
@@ -291,16 +359,23 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
         with multiprocessing.Pool(processes=num_workers) as pool:
             gen = batch_generator(stream, batch_size)
             args_gen = (
-                (batch_idx, batch, wikipedia_to_wikidata, temp_files, num_workers)
+                (batch_idx, batch, wikipedia_to_wikidata, temp_files, filtered_temp_files, num_workers)
                 for batch_idx, batch in gen
             )
 
             running_total = 0
-            for batch_idx, result_count in pool.imap(process_batch_wrapper, args_gen):
-                running_total += result_count
-                print(f"Completed batch {batch_idx}: {running_total} documents processed", file=sys.stderr)
+            running_filtered_total = 0
+            for batch_idx, valid_count, filtered_count in pool.imap(process_batch_wrapper, args_gen):
+                running_total += valid_count
+                running_filtered_total += filtered_count
+                print(f"Completed batch {batch_idx}: {running_total} valid, {running_filtered_total} filtered", file=sys.stderr)
 
+        # Merge and output valid results
         kway_merge_sorted_files(temp_files, sys.stdout)
+        
+        # Write filtered results to hardcoded file
+        with open('filtered.jsonl', 'w', encoding='utf-8') as filtered_out:
+            kway_merge_sorted_filtered_files(filtered_temp_files, filtered_out)
 
 
 def main():
@@ -308,9 +383,7 @@ def main():
     batch_size = 5000
 
     args = sys.argv[1:]
-    positional_args = []
-
-    sitelinks_path = positional_args[0] if positional_args else None
+    sitelinks_path = args[0] if args else None
 
     wikipedia_to_wikidata = load_sitelinks(sitelinks_path) if sitelinks_path else {}
 
