@@ -35,7 +35,7 @@ def wikipedia_url(title):
     title = str(title).strip()
     title = title.split("#", 1)[0].strip()
     title = re.sub(r"\s+", "_", title)
-    return WIKIPEDIA_BASE + quote(title, safe="_-().:/")
+    return WIKIPEDIA_BASE + quote(title, safe=";:@$!*(),/~")
 
 
 def is_article_link(link):
@@ -303,15 +303,17 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
 
 def main():
     num_workers = os.cpu_count()
-    batch_size = 10000
+    batch_size = 5000
 
     args = sys.argv[1:]
+    positional_args = []
     i = 0
     while i < len(args):
         if args[i] == '-j' and i + 1 < len(args):
             try:
                 num_workers = int(args[i + 1])
                 i += 2
+                continue
             except ValueError:
                 i += 1
         elif args[i].startswith('-j') and len(args[i]) > 2:
@@ -320,17 +322,15 @@ def main():
             except ValueError:
                 pass
             i += 1
+            continue
         else:
+            positional_args.append(args[i])
             i += 1
 
     if num_workers == 0:
         num_workers = os.cpu_count()
 
-    sitelinks_path = None
-    for arg in args:
-        if not arg.startswith('-'):
-            sitelinks_path = arg
-            break
+    sitelinks_path = positional_args[0] if positional_args else None
 
     wikipedia_to_wikidata = load_sitelinks(sitelinks_path) if sitelinks_path else {}
 
