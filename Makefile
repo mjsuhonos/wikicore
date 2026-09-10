@@ -157,8 +157,8 @@ $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(SITELINKS_MAP)
 		| awk -v sf=$(SITELINKS_MAP) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		> $@
 
-# 3. Build JSONL corpus for Wikipedia documents
-# TODO: VERY SLOW!   split and parallelize?
+# 3. Build JSONL corpus for Wikipedia documents (7.2M docs from 19.2M wiki pages)
+#    Time: 4h 18 min on M4/10
 jsontest: $(WIKIPEDIA_JSONL)
 $(WIKIPEDIA_JSONL): $(WIKIPEDIA_BZ) $(SITELINKS_MAP)
 	lbunzip2 -dc $(WIKIPEDIA_BZ) | python3 wiki2jsonl.py $(SITELINKS_MAP) > $@
