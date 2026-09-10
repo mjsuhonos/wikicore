@@ -238,12 +238,12 @@ def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
 
     return {
         "document_id": document_id,
-        "text": text,
         "subjects": subjects,
         "metadata": {
             "uri": wiki_uri,
             **metadata_links,
         },
+        "text": text,
     }
 
 
