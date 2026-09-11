@@ -31,7 +31,7 @@ except RuntimeError:
     pass
 
 # Configuration constants
-DEFAULT_BATCH_SIZE = 500
+DEFAULT_BATCH_SIZE = 1000
 DEFAULT_MAX_BATCHES = None  # Process all batches by default
 FILTERED_OUTPUT_FILE = 'filtered.jsonl'
 
@@ -151,18 +151,17 @@ def latest_revision(page_element):
 
 
 def load_sitelinks(sitelinks_path):
-    """Load sitelinks file and return a dict mapping title_bytes to qid_bytes.
+    """Load sitelinks file and return a compact mapping from Wikipedia title to Wikidata Q-ID.
     
-    Uses bytes for keys/values which is more memory-efficient than str.
-    For 200M entries: ~109-114 bytes/entry = ~21.8-22.8GB total.
+    This is memory-efficient: stores only the essential parts of URIs rather than full URIs.
     
     Input format: <wikidata_uri>\t<wikipedia_uri>
     Example: <http://www.wikidata.org/entity/Q42>\t<https://en.wikipedia.org/wiki/Douglas_Adams>
     
-    Stored as: {b"Douglas_Adams": b"Q42"}
+    Stored as: {"Douglas_Adams": "Q42"}
     
-    This is the most memory-efficient in-memory representation.
-    To reduce memory further, filter the sitelinks file externally to only needed entries.
+    This reduces memory usage by ~75-80% compared to storing full URIs.
+    For a sitelinks file with 100M entries, this saves ~15-20GB of memory.
     """
     title_to_qid = {}
     wikidata_prefix = "http://www.wikidata.org/entity/"
@@ -170,7 +169,7 @@ def load_sitelinks(sitelinks_path):
     wikidata_prefix_len = len(wikidata_prefix)
     wikipedia_prefix_len = len(wikipedia_prefix)
     
-    with open(sitelinks_path, 'r', encoding='utf-8') as f:
+    with open(sitelinks_path, 'r') as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -180,27 +179,20 @@ def load_sitelinks(sitelinks_path):
                 # Extract Q-ID from Wikidata URI
                 wikidata_uri = parts[0].strip().lstrip('<').rstrip('>')
                 if wikidata_uri.startswith(wikidata_prefix):
-                    qid = wikidata_uri[wikidata_prefix_len:].encode('utf-8')
+                    qid = wikidata_uri[wikidata_prefix_len:]
                 else:
                     continue
                 
                 # Extract title from Wikipedia URI
                 wikipedia_uri = parts[1].strip().lstrip('<').rstrip('>')
                 if wikipedia_uri.startswith(wikipedia_prefix):
-                    title = wikipedia_uri[wikipedia_prefix_len:].encode('utf-8')
+                    title = wikipedia_uri[wikipedia_prefix_len:]
                 else:
                     continue
                 
                 if title and qid:
                     title_to_qid[title] = qid
     return title_to_qid
-
-
-def lookup_qid(title_bytes, title_to_qid):
-    """Look up Q-ID for a title in dict."""
-    if not title_to_qid:
-        return b""
-    return title_to_qid.get(title_bytes, b"")
 
 
 def extract_page_data(page_element):
@@ -257,7 +249,7 @@ def page_data_to_jsonl(page_data, title_to_qid):
     
     Args:
         page_data: dict with page data
-        title_to_qid: dict mapping Wikipedia page titles (bytes) to Wikidata Q-IDs (bytes)
+        title_to_qid: dict mapping Wikipedia page titles to Wikidata Q-IDs
     
     Returns:
         dict: JSON Lines object for valid pages
@@ -301,16 +293,13 @@ def page_data_to_jsonl(page_data, title_to_qid):
 
         qids = []
         for link in links:
-            # Extract title from Wikipedia URL to look up in dict
+            # Extract title from Wikipedia URL to look up in compact mapping
             # link is a full URL like "https://en.wikipedia.org/wiki/Article_Name"
-            if link.startswith("https://en.wikipedia.org/wiki/"):
-                # Extract title from URL and normalize (spaces -> underscores)
-                # The URL already has underscores, but we normalize to be safe
-                url_title = link[len("https://en.wikipedia.org/wiki/"):]
-                title_bytes = url_title.encode('utf-8')
-                qid_bytes = lookup_qid(title_bytes, title_to_qid)
-                if qid_bytes:
-                    qids.append(qid_bytes.decode('utf-8'))
+            title = link[len("https://en.wikipedia.org/wiki/"):] if link.startswith("https://en.wikipedia.org/wiki/") else None
+            if title:
+                qid = title_to_qid.get(title, "")
+                if qid:
+                    qids.append(qid)
 
         if qids:
             metadata_links[str(number)] = ",".join(qids)
@@ -318,13 +307,10 @@ def page_data_to_jsonl(page_data, title_to_qid):
     text = "\n\n".join(rendered_paragraphs)
 
     # Look up Wikidata Q-ID for the page itself
-    # Normalize title: replace spaces with underscores to match sitelinks format
-    normalized_title = page_data['title'].replace(' ', '_')
-    title_bytes = normalized_title.encode('utf-8')
-    qid_bytes = lookup_qid(title_bytes, title_to_qid)
+    qid = title_to_qid.get(page_data['title'], "")
     
     # Filter out pages without Wikidata entries
-    if not qid_bytes:
+    if not qid:
         return ('filtered', 'no_wikidata', {
             'id': page_data['id'],
             'title': page_data['title'],
@@ -333,7 +319,6 @@ def page_data_to_jsonl(page_data, title_to_qid):
         })
 
     # Reconstruct full Wikidata URI from Q-ID
-    qid = qid_bytes.decode('utf-8')
     wikidata_uri = f"http://www.wikidata.org/entity/{qid}"
     label = page_data['title'].replace("_", " ")
     subjects = [{"uri": wikidata_uri, "label": label}]
@@ -482,14 +467,8 @@ def process_batch_wrapper(args):
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, sitelinks_path, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
-    """Process dump in parallel with multiple workers.
-    
-    Loads sitelinks as dict with interned bytes for memory efficiency.
-    """
-    # Load sitelinks as dict with interned bytes
-    title_to_qid = load_sitelinks(sitelinks_path) if sitelinks_path else {}
-    
+def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
+    """Process dump in parallel with multiple workers."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
             os.path.join(temp_dir, f'worker_{i}.jsonl')
@@ -515,10 +494,7 @@ def process_dump_parallel(stream, sitelinks_path, num_workers, batch_size=DEFAUL
 
             running_total = 0
             running_filtered_total = 0
-            # Use imap_unordered for better performance, with larger chunksize
-            # Results are still correct because kway_merge_sorted_files handles sorting
-            results_iter = pool.imap_unordered(process_batch_wrapper, args_gen, chunksize=4)
-            for batch_idx, valid_count, filtered_count in results_iter:
+            for batch_idx, valid_count, filtered_count in pool.imap(process_batch_wrapper, args_gen):
                 running_total += valid_count
                 running_filtered_total += filtered_count
                 print(f"Completed batch {batch_idx}: {running_total} valid, {running_filtered_total} filtered", file=sys.stderr)
@@ -539,11 +515,13 @@ def main():
     args = sys.argv[1:]
     sitelinks_path = args[0] if args else None
 
+    title_to_qid = load_sitelinks(sitelinks_path) if sitelinks_path else {}
+
     stream = sys.stdin.buffer
     try:
         process_dump_parallel(
             stream,
-            sitelinks_path,
+            title_to_qid,
             num_workers=num_workers,
             batch_size=batch_size,
             max_batches=max_batches
