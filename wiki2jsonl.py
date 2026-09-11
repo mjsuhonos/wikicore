@@ -148,8 +148,15 @@ def render_paragraph(code):
 
 
 def latest_revision(page):
-    """Return the last revision in the page."""
-    return next(reversed(list(page)), None)
+    """Return the last revision in the page.
+    
+    Efficiently iterates through revisions once, keeping only the last one.
+    This avoids the O(n) memory cost of list(page) + reversed() in the original.
+    """
+    last = None
+    for revision in page:
+        last = revision
+    return last
 
 
 def load_sitelinks(sitelinks_path):
@@ -397,6 +404,7 @@ def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_M
     Uses GLOBAL_TITLE_TO_QID for Wikidata lookups (inherited via fork).
     
     Optimizations:
+    - Uses dump.pages directly for more efficient page iteration
     - Filters pages by namespace and redirect in extract_page_data()
     - Filters by Wikidata presence using global mapping
     - Only yields non-None page data
@@ -405,7 +413,7 @@ def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_M
     current_batch = []
     batch_index = 0
 
-    for page in dump:
+    for page in dump.pages:
         page_data = extract_page_data(page)
         
         # Skip None entries (filtered by namespace/redirect/no_text in extract_page_data)
