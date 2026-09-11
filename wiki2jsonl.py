@@ -23,6 +23,11 @@ from mwparserfromhell.nodes import (
 )
 
 WIKIPEDIA_BASE = "https://en.wikipedia.org/wiki/"
+WIKIDATA_BASE = "http://www.wikidata.org/entity/"
+
+# Pre-compute lengths for faster prefix stripping
+WIKIPEDIA_BASE_LEN = len(WIKIPEDIA_BASE)
+WIKIDATA_BASE_LEN = len(WIKIDATA_BASE)
 
 try:
     multiprocessing.set_start_method('fork')
@@ -142,8 +147,8 @@ def latest_revision(page):
 
 
 def load_sitelinks(sitelinks_path):
-    """Load sitelinks file and return a mapping from Wikipedia URI to Wikidata URI."""
-    wikipedia_to_wikidata = {}
+    """Load sitelinks file and return a mapping from Wikipedia article title to Wikidata QID."""
+    title_to_qid = {}
     with open(sitelinks_path, 'r') as f:
         for line in f:
             line = line.strip()
@@ -153,8 +158,18 @@ def load_sitelinks(sitelinks_path):
             if len(parts) >= 2:
                 wikidata_uri = parts[0].strip().lstrip('<').rstrip('>')
                 wikipedia_uri = parts[1].strip().lstrip('<').rstrip('>')
-                wikipedia_to_wikidata[wikipedia_uri] = wikidata_uri
-    return wikipedia_to_wikidata
+                # Extract QID from Wikidata URI
+                if wikidata_uri.startswith(WIKIDATA_BASE):
+                    qid = wikidata_uri[WIKIDATA_BASE_LEN:]
+                else:
+                    continue
+                # Extract title from Wikipedia URI
+                if wikipedia_uri.startswith(WIKIPEDIA_BASE):
+                    title = wikipedia_uri[WIKIPEDIA_BASE_LEN:]
+                else:
+                    continue
+                title_to_qid[title] = qid
+    return title_to_qid
 
 
 def extract_page_data(page):
@@ -169,8 +184,12 @@ def extract_page_data(page):
     }
 
 
-def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
+def page_data_to_jsonl(page_data, title_to_qid):
     """Convert page data dict to JSON Lines object.
+    
+    Args:
+        page_data: dict with page metadata and text
+        title_to_qid: mapping from Wikipedia article titles to Wikidata QIDs
     
     Returns:
         dict: JSON Lines object for valid pages
@@ -211,20 +230,26 @@ def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
 
         qids = []
         for link in links:
-            wd = wikipedia_to_wikidata.get(link, "")
-            if wd:
-                qids.append(wd.split('/')[-1])
+            # Extract title from Wikipedia URL to look up in title_to_qid mapping
+            if link.startswith(WIKIPEDIA_BASE):
+                link_title = link[WIKIPEDIA_BASE_LEN:]
+            else:
+                link_title = link
+            qid = title_to_qid.get(link_title, "")
+            if qid:
+                qids.append(qid)
 
         if qids:
             metadata_links[str(number)] = ",".join(qids)
 
     text = "\n\n".join(rendered_paragraphs)
 
-    wiki_uri = wikipedia_url(page_data['title'])
-    wikidata_uri = wikipedia_to_wikidata.get(wiki_uri, "")
+    # Look up QID for this page's title
+    page_title = page_data['title']
+    page_qid = title_to_qid.get(page_title, "")
 
     # Filter out pages without Wikidata entries
-    if not wikidata_uri:
+    if not page_qid:
         return ('filtered', 'no_wikidata', {
             'id': page_data['id'],
             'title': page_data['title'],
@@ -232,9 +257,11 @@ def page_data_to_jsonl(page_data, wikipedia_to_wikidata):
             'reason': 'no_wikidata'
         })
 
-    label = page_data['title'].replace("_", " ")
+    wiki_uri = wikipedia_url(page_title)
+    wikidata_uri = WIKIDATA_BASE + page_qid
+    label = page_title.replace("_", " ")
     subjects = [{"uri": wikidata_uri, "label": label}]
-    document_id = wikidata_uri.split('/')[-1]
+    document_id = page_qid
 
     return {
         "document_id": document_id,
@@ -251,16 +278,16 @@ def process_batch(args):
     """Process a batch, write sorted results to temp file, return count.
     
     Args:
-        args: tuple of (batch, wikipedia_to_wikidata, temp_file_path, filtered_temp_file_path)
+        args: tuple of (batch, title_to_qid, temp_file_path, filtered_temp_file_path)
     Returns:
         tuple: (valid_count, filtered_count)
     """
-    batch, wikipedia_to_wikidata, temp_file_path, filtered_temp_file_path = args
+    batch, title_to_qid, temp_file_path, filtered_temp_file_path = args
     results = []
     filtered_results = []
     
     for page_data in batch:
-        row = page_data_to_jsonl(page_data, wikipedia_to_wikidata)
+        row = page_data_to_jsonl(page_data, title_to_qid)
         if isinstance(row, tuple) and len(row) == 3 and row[0] == 'filtered':
             # This is a filtered item
             _, _, filtered_info = row
@@ -284,8 +311,14 @@ def process_batch(args):
     return len(results), len(filtered_results)
 
 
-def kway_merge_sorted_files(file_paths, output_stream):
-    """Perform a k-way merge of sorted JSONL files, outputting sorted by document_id."""
+def kway_merge_sorted_files(file_paths, output_stream, key_field='document_id'):
+    """Perform a k-way merge of sorted JSONL files.
+    
+    Args:
+        file_paths: list of file paths to merge
+        output_stream: file-like object to write merged output to
+        key_field: the JSON field to use as the sort key (default: 'document_id')
+    """
     files = [open(fp, 'r', encoding='utf-8') for fp in file_paths]
 
     def gen(file):
@@ -293,33 +326,12 @@ def kway_merge_sorted_files(file_paths, output_stream):
             line = line.strip()
             if line:
                 doc = json.loads(line)
-                yield (doc['document_id'], line)
+                yield (doc[key_field], line)
 
     generators = [gen(f) for f in files]
     merged = heapq.merge(*generators, key=lambda x: x[0])
 
-    for doc_id, line in merged:
-        print(line, file=output_stream)
-
-    for f in files:
-        f.close()
-
-
-def kway_merge_sorted_filtered_files(file_paths, output_stream):
-    """Perform a k-way merge of sorted filtered JSONL files, outputting sorted by id."""
-    files = [open(fp, 'r', encoding='utf-8') for fp in file_paths]
-
-    def gen(file):
-        for line in file:
-            line = line.strip()
-            if line:
-                doc = json.loads(line)
-                yield (doc['id'], line)
-
-    generators = [gen(f) for f in files]
-    merged = heapq.merge(*generators, key=lambda x: x[0])
-
-    for item_id, line in merged:
+    for _, line in merged:
         print(line, file=output_stream)
 
     for f in files:
@@ -346,13 +358,13 @@ def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_M
 
 def process_batch_wrapper(args):
     """Wrapper to assign batch to correct worker temp file."""
-    batch_index, batch, wikipedia_to_wikidata, temp_files, filtered_temp_files, num_workers = args
+    batch_index, batch, title_to_qid, temp_files, filtered_temp_files, num_workers = args
     worker_idx = batch_index % num_workers
-    valid_count, filtered_count = process_batch((batch, wikipedia_to_wikidata, temp_files[worker_idx], filtered_temp_files[worker_idx]))
+    valid_count, filtered_count = process_batch((batch, title_to_qid, temp_files[worker_idx], filtered_temp_files[worker_idx]))
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
+def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
     """Process dump in parallel with multiple workers."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
@@ -373,7 +385,7 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
         with multiprocessing.Pool(processes=num_workers) as pool:
             gen = batch_generator(stream, batch_size, max_batches=max_batches)
             args_gen = (
-                (batch_idx, batch, wikipedia_to_wikidata, temp_files, filtered_temp_files, num_workers)
+                (batch_idx, batch, title_to_qid, temp_files, filtered_temp_files, num_workers)
                 for batch_idx, batch in gen
             )
 
@@ -389,7 +401,7 @@ def process_dump_parallel(stream, wikipedia_to_wikidata, num_workers, batch_size
         
         # Write filtered results to hardcoded file
         with open(FILTERED_OUTPUT_FILE, 'w', encoding='utf-8') as filtered_out:
-            kway_merge_sorted_filtered_files(filtered_temp_files, filtered_out)
+            kway_merge_sorted_files(filtered_temp_files, filtered_out, key_field='id')
 
 
 def main():
@@ -400,13 +412,13 @@ def main():
     args = sys.argv[1:]
     sitelinks_path = args[0] if args else None
 
-    wikipedia_to_wikidata = load_sitelinks(sitelinks_path) if sitelinks_path else {}
+    title_to_qid = load_sitelinks(sitelinks_path) if sitelinks_path else {}
 
     stream = sys.stdin.buffer
     try:
         process_dump_parallel(
             stream,
-            wikipedia_to_wikidata,
+            title_to_qid,
             num_workers=num_workers,
             batch_size=batch_size,
             max_batches=max_batches
