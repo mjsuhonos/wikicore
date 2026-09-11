@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import tempfile
+import zlib
 from urllib.parse import quote, unquote
 
 import mwxml
@@ -29,16 +30,24 @@ WIKIDATA_BASE = "http://www.wikidata.org/entity/"
 WIKIPEDIA_BASE_LEN = len(WIKIPEDIA_BASE)
 WIKIDATA_BASE_LEN = len(WIKIDATA_BASE)
 
+# Global variable for Wikidata title-to-QID mapping
+# With multiprocessing 'fork' method, this is inherited by worker processes
+# via copy-on-write, avoiding expensive serialization
+GLOBAL_TITLE_TO_QID = None
+
 try:
     multiprocessing.set_start_method('fork')
 except RuntimeError:
     pass
 
 # Configuration constants
-DEFAULT_NUM_WORKERS = os.cpu_count() #// 2
+DEFAULT_NUM_WORKERS = round(os.cpu_count() * 3 / 4)
 DEFAULT_BATCH_SIZE = 5000
 DEFAULT_MAX_BATCHES = None  # Process all batches by default
 FILTERED_OUTPUT_FILE = 'unmapped.jsonl'
+
+# Maximum text size to keep (in characters) - truncate intro to this length
+MAX_TEXT_SIZE = 2000
 
 
 def wikipedia_url(title):
@@ -183,14 +192,37 @@ def load_sitelinks(sitelinks_path):
 
 
 def extract_page_data(page):
-    """Extract picklable data from a mwxml Page for parallel processing."""
+    """Extract picklable data from a mwxml Page for parallel processing.
+    
+    Optimizations:
+    - Filters out pages based on namespace and redirect status early
+    - Truncates text to MAX_TEXT_SIZE characters
+    - Skips text extraction for filtered pages
+    """
+    # Early filtering: namespace and redirect checks
+    if page.namespace != 0:
+        return None
+    
+    if page.redirect:
+        return None
+    
     revision = latest_revision(page)
+    if revision is None or revision.text is None:
+        return None
+    
+    text = revision.text
+    
+    # Simple truncation: keep only first MAX_TEXT_SIZE characters
+    # This significantly reduces data size before sending to workers
+    if len(text) > MAX_TEXT_SIZE:
+        text = text[:MAX_TEXT_SIZE]
+    
     return {
         'title': page.title,
         'id': page.id,
         'redirect': page.redirect,
         'namespace': page.namespace,
-        'text': revision.text if revision and revision.text else None,
+        'text': text,
     }
 
 
@@ -295,17 +327,29 @@ def _write_sorted(file_path, items):
 def process_batch(args):
     """Process a batch, write sorted results to temp file, return count.
     
+    Uses GLOBAL_TITLE_TO_QID for Wikidata lookups (inherited via fork).
+    
     Args:
-        args: tuple of (batch, title_to_qid, temp_file_path, filtered_temp_file_path)
+        args: tuple of (batch, temp_file_path, filtered_temp_file_path, num_workers)
     Returns:
         tuple: (valid_count, filtered_count)
     """
-    batch, title_to_qid, temp_file_path, filtered_temp_file_path = args
+    batch, temp_file_path, filtered_temp_file_path = args
     results = []
     filtered_results = []
     
     for page_data in batch:
-        row = page_data_to_jsonl(page_data, title_to_qid)
+        # Check if this was pre-filtered (e.g., no_wikidata from batch_generator)
+        if page_data.get('_filtered'):
+            filtered_info = page_data['_filter_info']
+            filtered_results.append((filtered_info['id'], json.dumps(filtered_info, ensure_ascii=False)))
+            continue
+        
+        # Decompress text if it was compressed
+        if page_data.get('_compressed') and page_data.get('text'):
+            page_data['text'] = zlib.decompress(page_data['text']).decode('utf-8')
+        
+        row = page_data_to_jsonl(page_data, GLOBAL_TITLE_TO_QID)
         if isinstance(row, tuple) and len(row) == 3 and row[0] == 'filtered':
             # This is a filtered item
             _, _, filtered_info = row
@@ -348,13 +392,48 @@ def kway_merge_sorted_files(file_paths, output_stream, key_field='document_id'):
 
 
 def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
-    """Generator that yields batches of page data from the dump."""
+    """Generator that yields batches of page data from the dump.
+    
+    Uses GLOBAL_TITLE_TO_QID for Wikidata lookups (inherited via fork).
+    
+    Optimizations:
+    - Filters pages by namespace and redirect in extract_page_data()
+    - Filters by Wikidata presence using global mapping
+    - Only yields non-None page data
+    """
     dump = mwxml.Dump.from_file(stream)
     current_batch = []
     batch_index = 0
 
     for page in dump:
-        current_batch.append(extract_page_data(page))
+        page_data = extract_page_data(page)
+        
+        # Skip None entries (filtered by namespace/redirect/no_text in extract_page_data)
+        if page_data is None:
+            continue
+        
+        # Early Wikidata filtering using global mapping
+        # With fork, GLOBAL_TITLE_TO_QID is inherited from parent process
+        if GLOBAL_TITLE_TO_QID is not None:
+            page_title = page_data['title']
+            page_qid = GLOBAL_TITLE_TO_QID.get(page_title, "")
+            if not page_qid:
+                # Store filtered info for later output
+                page_data['_filtered'] = True
+                page_data['_filter_reason'] = 'no_wikidata'
+                page_data['_filter_info'] = {
+                    'id': page_data['id'],
+                    'title': page_title,
+                    'namespace': page_data['namespace'],
+                    'reason': 'no_wikidata'
+                }
+        
+        # Compress text to reduce inter-process transfer size
+        if page_data.get('text'):
+            page_data['text'] = zlib.compress(page_data['text'].encode('utf-8'))
+            page_data['_compressed'] = True
+        
+        current_batch.append(page_data)
         if len(current_batch) >= batch_size:
             yield batch_index, current_batch
             batch_index += 1
@@ -366,15 +445,25 @@ def batch_generator(stream, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_M
 
 
 def process_batch_wrapper(args):
-    """Wrapper to assign batch to correct worker temp file."""
-    batch_index, batch, title_to_qid, temp_files, filtered_temp_files, num_workers = args
+    """Wrapper to assign batch to correct worker temp file.
+    
+    Uses GLOBAL_TITLE_TO_QID (inherited via fork) - no need to pass it per batch.
+    """
+    batch_index, batch, temp_files, filtered_temp_files, num_workers = args
     worker_idx = batch_index % num_workers
-    valid_count, filtered_count = process_batch((batch, title_to_qid, temp_files[worker_idx], filtered_temp_files[worker_idx]))
+    valid_count, filtered_count = process_batch((batch, temp_files[worker_idx], filtered_temp_files[worker_idx]))
     return (batch_index, valid_count, filtered_count)
 
 
 def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
-    """Process dump in parallel with multiple workers."""
+    """Process dump in parallel with multiple workers.
+    
+    Uses GLOBAL_TITLE_TO_QID with fork's copy-on-write to avoid pickling
+    the large mapping to each worker for every batch.
+    """
+    global GLOBAL_TITLE_TO_QID
+    GLOBAL_TITLE_TO_QID = title_to_qid
+    
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
             os.path.join(temp_dir, f'worker_{i}.jsonl')
@@ -392,9 +481,9 @@ def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_
             open(fp, 'w').close()
 
         with multiprocessing.Pool(processes=num_workers) as pool:
-            gen = batch_generator(stream, batch_size, max_batches=max_batches)
+            gen = batch_generator(stream, batch_size=batch_size, max_batches=max_batches)
             args_gen = (
-                (batch_idx, batch, title_to_qid, temp_files, filtered_temp_files, num_workers)
+                (batch_idx, batch, temp_files, filtered_temp_files, num_workers)
                 for batch_idx, batch in gen
             )
 
