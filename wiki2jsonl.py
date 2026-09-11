@@ -7,7 +7,7 @@ import os
 import re
 import sys
 import tempfile
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import mwxml
 import mwparserfromhell
@@ -172,6 +172,10 @@ def load_sitelinks(sitelinks_path):
             # Extract title from Wikipedia URI
             if wikipedia_uri.startswith(wp_base):
                 title = wikipedia_uri[wp_len:]
+                # Decode URL-encoded characters (e.g., %C3%A9 -> é)
+                title = unquote(title)
+                # Convert URL-encoded underscores back to spaces to match Wikipedia dump titles
+                title = title.replace("_", " ")
             else:
                 continue
             title_to_qid[title] = qid
