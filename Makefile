@@ -16,8 +16,8 @@ OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
 CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
 
 # Input dumps
-WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260824-all-BETA.nt.gz
-WIKIPEDIA_BZ     := $(SOURCE_DIR)/enwiki-20260801-pages-articles.xml.bz2
+WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260824-all-BETA.nt.gz        # >1TB  uncompressed
+WIKIPEDIA_BZ     := $(SOURCE_DIR)/enwiki-20260801-pages-articles.xml.bz2  # 110GB uncompressed
 #FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
 # Extracted files
