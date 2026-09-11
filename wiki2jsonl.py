@@ -35,23 +35,23 @@ except RuntimeError:
     pass
 
 # Configuration constants
+DEFAULT_NUM_WORKERS = os.cpu_count() #// 2
 DEFAULT_BATCH_SIZE = 5000
 DEFAULT_MAX_BATCHES = None  # Process all batches by default
-FILTERED_OUTPUT_FILE = 'filtered.jsonl'
+FILTERED_OUTPUT_FILE = 'unmapped.jsonl'
 
 
 def wikipedia_url(title):
     """Turn a MediaWiki article title into a Wikipedia URL."""
     title = str(title).strip()
     title = title.split("#", 1)[0].strip()
-    title = re.sub(r"\s+", "_", title)
+    title = title.replace(" ", "_")
     return WIKIPEDIA_BASE + quote(title, safe=";:@$!*(),/~")
 
 
 def is_article_link(link):
     """Return True for links to normal Wikipedia articles."""
-    title = str(link.title).strip()
-    return bool(title) and ":" not in title
+    return bool(link.title) and ":" not in str(link.title).strip()
 
 
 def extract_intro(code):
@@ -62,18 +62,16 @@ def extract_intro(code):
             break
         # Skip template nodes to prevent them from appearing in the output
         if not isinstance(node, Template):
-            nodes.append(node)
-    return mwparserfromhell.parse("".join(str(node) for node in nodes))
+            nodes.append(str(node))
+    return mwparserfromhell.parse("".join(nodes))
 
 
 def extract_paragraphs(code):
     """Split intro wikitext into blank-line-separated paragraphs."""
-    text = str(code)
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    paragraphs = re.split(r"\n\s*\n", text)
+    text = str(code).replace("\r\n", "\n").replace("\r", "\n")
     return [
         mwparserfromhell.parse(p.strip())
-        for p in paragraphs
+        for p in re.split(r"\n\s*\n", text)
         if p.strip()
     ]
 
@@ -123,12 +121,14 @@ def render_wikicode(code):
 
 def clean_text(text):
     """Normalize whitespace without destroying paragraph structure."""
-    # Remove magic words like __NOTOC__, __TOC__, etc.
+    # Remove magic words like __NOTOC__, __TOC__, etc. and bold/italic markers
     text = re.sub(r'__[A-Z_]+__', '', text)
     text = text.replace("'''", "").replace("'", "")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
+    # Normalize all whitespace sequences to single spaces
+    text = re.sub(r'[ \t]+', ' ', text)
+    # Remove leading/trailing whitespace from lines and normalize newlines
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n[ \t]+', '\n', text)
     return text.strip()
 
 
@@ -140,35 +140,41 @@ def render_paragraph(code):
 
 def latest_revision(page):
     """Return the last revision in the page."""
-    revision = None
-    for rev in page:
-        revision = rev
-    return revision
+    return next(reversed(list(page)), None)
 
 
 def load_sitelinks(sitelinks_path):
     """Load sitelinks file and return a mapping from Wikipedia article title to Wikidata QID."""
     title_to_qid = {}
+    wp_len = WIKIPEDIA_BASE_LEN
+    wd_len = WIKIDATA_BASE_LEN
+    wp_base = WIKIPEDIA_BASE
+    wd_base = WIKIDATA_BASE
     with open(sitelinks_path, 'r') as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             parts = line.split('\t')
-            if len(parts) >= 2:
-                wikidata_uri = parts[0].strip().lstrip('<').rstrip('>')
-                wikipedia_uri = parts[1].strip().lstrip('<').rstrip('>')
-                # Extract QID from Wikidata URI
-                if wikidata_uri.startswith(WIKIDATA_BASE):
-                    qid = wikidata_uri[WIKIDATA_BASE_LEN:]
-                else:
-                    continue
-                # Extract title from Wikipedia URI
-                if wikipedia_uri.startswith(WIKIPEDIA_BASE):
-                    title = wikipedia_uri[WIKIPEDIA_BASE_LEN:]
-                else:
-                    continue
-                title_to_qid[title] = qid
+            if len(parts) < 2:
+                continue
+            wikidata_uri = parts[0].strip()
+            if wikidata_uri.startswith('<') and wikidata_uri.endswith('>'):
+                wikidata_uri = wikidata_uri[1:-1]
+            wikipedia_uri = parts[1].strip()
+            if wikipedia_uri.startswith('<') and wikipedia_uri.endswith('>'):
+                wikipedia_uri = wikipedia_uri[1:-1]
+            # Extract QID from Wikidata URI
+            if wikidata_uri.startswith(wd_base):
+                qid = wikidata_uri[wd_len:]
+            else:
+                continue
+            # Extract title from Wikipedia URI
+            if wikipedia_uri.startswith(wp_base):
+                title = wikipedia_uri[wp_len:]
+            else:
+                continue
+            title_to_qid[title] = qid
     return title_to_qid
 
 
@@ -252,7 +258,7 @@ def page_data_to_jsonl(page_data, title_to_qid):
     if not page_qid:
         return ('filtered', 'no_wikidata', {
             'id': page_data['id'],
-            'title': page_data['title'],
+            'title': page_title,
             'namespace': page_data['namespace'],
             'reason': 'no_wikidata'
         })
@@ -260,8 +266,8 @@ def page_data_to_jsonl(page_data, title_to_qid):
     wiki_uri = wikipedia_url(page_title)
     wikidata_uri = WIKIDATA_BASE + page_qid
     label = page_title.replace("_", " ")
-    subjects = [{"uri": wikidata_uri, "label": label}]
     document_id = page_qid
+    subjects = [{"uri": wikidata_uri, "label": label}]
 
     return {
         "document_id": document_id,
@@ -272,6 +278,14 @@ def page_data_to_jsonl(page_data, title_to_qid):
         },
         "text": text,
     }
+
+
+def _write_sorted(file_path, items):
+    """Write sorted items to file. Items are (key, json_line) tuples."""
+    items.sort(key=lambda x: x[0])
+    with open(file_path, 'a', encoding='utf-8') as f:
+        for _, json_line in items:
+            f.write(json_line + '\n')
 
 
 def process_batch(args):
@@ -296,17 +310,8 @@ def process_batch(args):
             # This is a valid result
             results.append((row['document_id'], json.dumps(row, ensure_ascii=False)))
     
-    # Sort and write valid results
-    results.sort(key=lambda x: x[0])
-    with open(temp_file_path, 'a', encoding='utf-8') as f:
-        for doc_id, json_line in results:
-            f.write(json_line + '\n')
-    
-    # Sort and write filtered results
-    filtered_results.sort(key=lambda x: x[0])
-    with open(filtered_temp_file_path, 'a', encoding='utf-8') as f:
-        for item_id, json_line in filtered_results:
-            f.write(json_line + '\n')
+    _write_sorted(temp_file_path, results)
+    _write_sorted(filtered_temp_file_path, filtered_results)
     
     return len(results), len(filtered_results)
 
@@ -405,7 +410,7 @@ def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_
 
 
 def main():
-    num_workers = os.cpu_count()
+    num_workers = DEFAULT_NUM_WORKERS
     batch_size = DEFAULT_BATCH_SIZE
     max_batches = DEFAULT_MAX_BATCHES
 
