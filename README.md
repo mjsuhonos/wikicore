@@ -1,6 +1,6 @@
 # Wiki Core
 
-Toolkit to extract SKOS controlled vocabularies from Wikidata RDF dump, build fulltext corpora from the WD5M dataset, and load/train/evaluate vocabularies using the Annif toolkit.
+Toolkit to extract SKOS controlled vocabularies from Wikidata RDF dump, build fulltext corpora from Wikipedia dump, and load/train/evaluate vocabularies using the Annif toolkit.
 
 ```shell
 Usage: make [TARGET] [-j N] [OPTIONS]
