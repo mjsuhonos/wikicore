@@ -8,8 +8,8 @@ Usage: make [TARGET] [-j N] [OPTIONS]
 
 Targets:
 skos
-  vocab		Generate SKOS vocabs (.nt)
-  fulltext	Generate fulltext splits (.tsv)
+  vocab		Generate Wikidata SKOS vocabs (.nt)
+  fulltext	Generate JSONL text splits (.jsonl)
 
 annif
   config	Generate Annif project configs (.cfg)
@@ -34,7 +34,7 @@ Generates vocabularies as SKOS files using Wikidata RDF dump as source:
 - core (1)
 
 ### fulltext
-Generates test/train/eval splits for each vocabulary using WD5M as fulltext source.
+Generates test/train/eval splits for each vocabulary using Wikipedia XML dump as fulltext source.
 
 ## Annif targets (make annif)
 ### config
