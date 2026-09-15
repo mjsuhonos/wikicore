@@ -1,5 +1,6 @@
 SHELL := /bin/bash
-.SHELLFLAGS := -o pipefail -c
+.SHELLFLAGS := -euo pipefail -c
+.PHONY: default data vocab fulltext annif config load train compress decompress
 
 # Options
 LOCALE    ?= en
@@ -16,15 +17,14 @@ OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
 CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
 
 # Input dumps
+# NB: very large! Wikidata is >1TB uncompressed, Wikipedia is 110GB uncompressed
 WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260824-all-BETA.nt.gz
 WIKIPEDIA_BZ     := $(SOURCE_DIR)/enwiki-20260801-pages-articles.xml.bz2
-#FULLTEXT_GZ      := $(SOURCE_DIR)/wikidata5m_text.txt.gz
 
 # Extracted files
 SITELINKS_MAP    := $(WORK_DIR)/enwiki_sitelinks.tsv
-WIKIDATA_NT      := $(WORK_DIR)/enwiki_linked_wikidata.nt
-WIKIPEDIA_JSONL  := $(WORK_DIR)/enwiki_corpus.jsonl
-#SITELINKS_WD5M   := $(WORK_DIR)/enwiki_linked_wikidata_wd5m.tsv
+WIKIDATA_NT      := $(WORK_DIR)/enwiki_wikidata.nt
+WIKIPEDIA_TSV    := $(WORK_DIR)/enwiki_corpus.tsv
 
 # SKOS files
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
@@ -32,14 +32,9 @@ PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
 PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
 PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
 PROPS_P361_NT    := $(WORK_DIR)/wikicore-P361.nt
+OUT_VOCAB        := $(OUT_DIR)/vocab
 
-# Wikipedia corpus files
-# TODO: document metadata for CSV format
-WORK_CORPUS      := $(WORK_DIR)/corpus
-OUT_CORPUS       := $(OUT_DIR)/corpus
-
-# WD5M Fulltext files
-# TODO: deprecate?
+# JSONL Fulltext files
 WORK_FULLTEXT    := $(WORK_DIR)/fulltext
 OUT_FULLTEXT     := $(OUT_DIR)/fulltext
 
@@ -53,44 +48,41 @@ default:
 	@echo "Wiki Core toolkit"
 	@echo "-----------------"
 	@echo "Usage: make [TARGET] [-j N] [OPTIONS]"
-	@echo "   eg. make annif -j 4 LOCALE=fr BACKEND=omikuji"
+	@echo "	eg. make annif -j 4 LOCALE=fr BACKEND=omikuji"
 	@echo ""
 	@echo "Targets:"
 	@echo "data"
-	@echo "  vocab		Generate Wikidata SKOS vocabs (.nt)"
-	@echo "  corpus	Generate Wikipedia corpora (.jsonl)"
-	@echo "  fulltext	Generate WD5M text splits (.tsv)"
+	@echo "	vocab		Generate Wikidata SKOS vocabs (.nt)"
+	@echo "	fulltext	Generate JSONL text splits (.jsonl)"
 	@echo ""
 	@echo "annif"
-	@echo "  config	Generate Annif project configs (.cfg)"
-	@echo "  load		Load vocabs into Annif"
-	@echo "  train		Train and evaluate Annif projects (.json)"
+	@echo "	config		Generate Annif project configs (.cfg)"
+	@echo "	load		Load vocabs into Annif"
+	@echo "	train		Train and evaluate Annif projects (.json)"
 	@echo ""
-	@echo "  compress	Compress files for Github (.gz)"
-	@echo "  decompress	Extract files from Github"
+	@echo "	compress	Compress files for Github (.gz)"
+	@echo "	decompress	Extract files from Github"
 	@echo ""
 	@echo "Options:"
-	@echo "  -j N		Number of parallel jobs ('-j' alone means all CPUs)"
-	@echo "  RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
-	@echo "  LOCALE	Default 'en'"
-	@echo "  BACKEND	Default 'mllm'"
+	@echo "	-j N		Number of parallel jobs ('-j' alone means all CPUs)"
+	@echo "	RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
+	@echo "	LOCALE	Default 'en'"
+	@echo "	BACKEND	Default 'mllm'"
+	@echo ""
 
 # Data targets
+#    Time: 2h on M4/10
 data:		vocab fulltext
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 
-vocab:		core class occupation
-core:		$(OUT_DIR)/core.nt
-class:		$(WORK_DIR)/class.nt
-occupation:	$(WORK_DIR)/occupation.nt
+vocab:		$(OUT_VOCAB)/core.nt \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_VOCAB)/class/%.nt,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES)) \
 
-corpus:		$(OUT_CORPUS)/core.csv
-			# TODO: add classes, occupations
-
-fulltext: 	$(OUT_FULLTEXT)/core.tsv \
-			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.tsv,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.tsv,$(OCCUPATION_FILES)) \
+fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
 
 # Annif targets
 annif:		config load train
@@ -113,39 +105,22 @@ train:		$(ANNIF_PROJECTS)/.trained_core \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.trained_occupation_%,$(OCCUPATION_FILES)) \
 
 # GitHub GZip targets
-compress: $(OUT_DIR) $(OUT_CORPUS)
+compress: $(OUT_VOCAB) $(OUT_FULLTEXT)
 	# Vocabularies
-	find $(OUT_DIR) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
+	find $(OUT_VOCAB) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
 	# Corpus
-	find $(OUT_CORPUS) -maxdepth 2 -type f -name "*.csv" -exec pigz -k -f {} \;
+	find $(OUT_FULLTEXT) -maxdepth 2 -type f -name "*.jsonl" -exec pigz -k -f {} \;
 
 decompress:
 	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
-	#cat $(OUT_DIR)/class/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/class.nt
-	#cat $(OUT_DIR)/occupation/*.nt | LC_ALL=C sort -u > $(OUT_DIR)/occupation.nt
-
-$(WORK_DIR) $(WORK_DIR)/occupation $(WORK_DIR)/class:
-	mkdir -p $@
-
-$(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation:
-	mkdir -p $@
-
-$(OUT_DIR) $(OUT_DIR)/occupation $(OUT_DIR)/class:
-	mkdir -p $@
-
-$(OUT_CORPUS) $(OUT_CORPUS)/class $(OUT_CORPUS)/occupation:
-	mkdir -p $@
-
-$(ANNIF_PROJECTS) $(ANNIF_EVAL):
-	mkdir -p $@
 
 # 1. Extract URIs with Wikipedia sitelinks (10M unfiltered; 7.4M filtered)
 #    This also filters out structural Wikidata statements
 #    Time: 20 min on M4/10
-$(SITELINKS_MAP): $(WIKIDATA_GZ) | $(WORK_DIR) $(OUT_DIR)
+$(SITELINKS_MAP): $(WIKIDATA_GZ) | $(WORK_DIR)
 	pigz -dc $< \
 		| rg "en.wikipedia.org.*?schema.org/about" \
-		| rg -v "wiki/(Category|Template|Portal|Wikipedia|Module|List_of_.+):" \
+		| rg -v 'wiki/(?:Category|Template|Portal|Wikipedia|Module):|List_of_.+' \
 		| awk '{print $$3 "\t" $$1}' \
 		> $@
 
@@ -157,11 +132,10 @@ $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(SITELINKS_MAP)
 		| awk -v sf=$(SITELINKS_MAP) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		> $@
 
-# 3. Build JSONL corpus for Wikipedia documents
-# TODO: VERY SLOW!   split and parallelize?
-jsontest: $(WIKIPEDIA_JSONL)
-$(WIKIPEDIA_JSONL): $(WIKIPEDIA_BZ) $(SITELINKS_MAP)
-	lbunzip2 -dc $(WIKIPEDIA_BZ) | python3 wiki2jsonl.py $(SITELINKS_MAP) > $@
+# 3. Build JSONL corpus for Wikipedia documents (7.1M)
+#    Time: 1h 30min on M4/10
+$(WIKIPEDIA_TSV): $(WIKIPEDIA_BZ) $(SITELINKS_MAP)
+	lbunzip2 -dc $(WIKIPEDIA_BZ) | python3 wiki2jsonl.py $(SITELINKS_MAP)| LC_ALL=C sort -u > $@
 
 # 4a. Extract localized labels (~14M English)
 $(SKOS_LABELS_NT): $(WIKIDATA_NT)
@@ -178,18 +152,10 @@ $(PROPS_P361_NT): $(WIKIDATA_NT)
 # 4d. Extract instance_of (class) properties (~10M)
 $(PROPS_P31_NT): $(WIKIDATA_NT)
 	rg -F -e '/prop/direct/P31>' $< | LC_ALL=C sort -u > $@
-	#$(MAKE) $(ROOT_DIR)/class_labels.tsv
 
 # 4e. Extract occupation properties (~3.3M)
 $(PROPS_P106_NT): $(WIKIDATA_NT)
 	rg -F -e '/prop/direct/P106>' $< | LC_ALL=C sort -u > $@
-	#$(MAKE) $(ROOT_DIR)/occupation_labels.tsv
-
-#$(ROOT_DIR)/class_labels.tsv: $(PROPS_P31_NT) $(SKOS_LABELS_NT)
-#	rg prefLabel $(SKOS_LABELS_NT) | awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' <(awk '{print $$3}' $< | sort | uniq -c | awk '{print $$2 "\t" $$1}' | sort -t$$'\t' -k2 -nr) - | sort -k2 -nr > $@
-
-#$(ROOT_DIR)/occupation_labels.tsv: $(PROPS_P106_NT) $(SKOS_LABELS_NT)
-#	rg prefLabel $(SKOS_LABELS_NT) | awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' <(awk '{print $$3}' $< | sort | uniq -c | awk '{print $$2 "\t" $$1}' | sort -t$$'\t' -k2 -nr) - | sort -k2 -nr > $@
 
 # Reusable SKOS generator
 define generate_skos_nt
@@ -208,37 +174,25 @@ endef
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
-# Make SKOS output for core concepts
-$(OUT_DIR)/core.nt: $(WORK_DIR)/core.tsv
-	$(call generate_skos_nt,$<,$@)
+# Generate URI lists for each class
+$(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
+	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # Generate URI lists for each occupation
 $(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
-$(WORK_DIR)/occupation.tsv: $(WORK_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(WORK_DIR)/occupation/%.tsv,$(OCCUPATION_FILES))
-	cat $</*.tsv | LC_ALL=C sort -u >> $@
-
-# Make SKOS output for each occupation
-$(OUT_DIR)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_DIR)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
-	$(call generate_skos_nt,$<,$@,occupation)
-
-$(WORK_DIR)/occupation.nt: $(OUT_DIR)/occupation | $(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_DIR)/occupation/%.nt,$(OCCUPATION_FILES))
-	cat $</*.nt | LC_ALL=C sort -u >> $@
-
-# Generate URI lists for each class
-$(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
-	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
-
-$(WORK_DIR)/class.tsv: $(WORK_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(WORK_DIR)/class/%.tsv,$(CLASS_FILES))
-	cat $</*.tsv | LC_ALL=C sort -u >> $@
+# Make SKOS output for core concepts
+$(OUT_VOCAB)/core.nt: $(WORK_DIR)/core.tsv
+	$(call generate_skos_nt,$<,$@)
 
 # Make SKOS output for each class
-$(OUT_DIR)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_DIR)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+$(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_VOCAB)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,class)
 
-$(WORK_DIR)/class.nt: $(OUT_DIR)/class | $(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_DIR)/class/%.nt,$(CLASS_FILES))
-	cat $</*.nt | LC_ALL=C sort -u >> $@
+# Make SKOS output for each occupation
+$(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_VOCAB)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	$(call generate_skos_nt,$<,$@,occupation)
 
 # Reusable training split generator
 define split_file
@@ -251,27 +205,36 @@ define split_file
 	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.tsv"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.tsv"); else print > (dir "/" base "-train.tsv")}'
 endef
 
-# Make fulltext output for each class
-$(WORK_FULLTEXT)/class/%.tsv: $(WORK_DIR)/class/%.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)/class
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+# Reusable JSONL split generator
+define split_jsonl
+	input="$(2)"; \
+	dir=$$(dirname "$$input"); \
+	base=$$(basename "$$input" .jsonl); \
+	total_lines=$$(wc -l < "$(1)"); \
+	test_lines=$$((total_lines * 10 / 100)); \
+	eval_lines=$$((total_lines * 10 / 100)); \
+	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.jsonl"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.jsonl"); else print > (dir "/" base "-train.jsonl")}'
+endef
 
-# Make fulltext output for each occupation
-$(WORK_FULLTEXT)/occupation/%.tsv: $(WORK_DIR)/occupation/%.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)/occupation
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+# Filter JSONL by concept using join with URI lists, then strip URI prefix
+$(WORK_FULLTEXT)/core.jsonl: $(WORK_DIR)/core.tsv $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)
+	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
 
-# Generate fulltext for concept URI lists
-$(WORK_FULLTEXT)/core.tsv: $(WORK_DIR)/core.tsv | $(SITELINKS_WD5M) $(WORK_FULLTEXT)
-	LC_ALL=C join $< $(SITELINKS_WD5M) | sed -E 's/<([^>]+)> (.*)/\2\t<\1>/' > $@
+$(WORK_FULLTEXT)/class/%.jsonl: $(WORK_DIR)/class/%.tsv $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)/class
+	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
 
-# Generate test/train/eval splits for fulltext
-$(OUT_FULLTEXT)/core.tsv: $(WORK_FULLTEXT)/core.tsv | $(OUT_FULLTEXT)
-	$(call split_file,$<,$@)
+$(WORK_FULLTEXT)/occupation/%.jsonl: $(WORK_DIR)/occupation/%.tsv $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)/occupation
+	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
 
-$(OUT_FULLTEXT)/class/%.tsv: $(WORK_FULLTEXT)/class/%.tsv | $(OUT_FULLTEXT)/class
-	$(call split_file,$<,$@)
+# Generate train/eval/test splits for JSONL
+$(OUT_FULLTEXT)/core.jsonl: $(WORK_FULLTEXT)/core.jsonl | $(OUT_FULLTEXT)
+	$(call split_jsonl,$<,$@)
 
-$(OUT_FULLTEXT)/occupation/%.tsv: $(WORK_FULLTEXT)/occupation/%.tsv | $(OUT_FULLTEXT)/occupation
-	$(call split_file,$<,$@)
+$(OUT_FULLTEXT)/class/%.jsonl: $(WORK_FULLTEXT)/class/%.jsonl | $(OUT_FULLTEXT)/class
+	$(call split_jsonl,$<,$@)
+
+$(OUT_FULLTEXT)/occupation/%.jsonl: $(WORK_FULLTEXT)/occupation/%.jsonl | $(OUT_FULLTEXT)/occupation
+	$(call split_jsonl,$<,$@)
 
 # Reusable Annif project generator
 # FIXME: fails to generate core vocab name correctly (prefix behaviour)
@@ -309,7 +272,7 @@ define generate_ensemble
 	echo "vocab = wikicore-$(RUN_DATE)-$(2)-$(LOCALE)" >> $@
 endef
 
-$(ANNIF_PROJECTS)/projects_class.cfg: $(WORK_DIR)/class | $(ANNIF_PROJECTS)
+$(ANNIF_PROJECTS)/class.cfg: $(WORK_DIR)/class | $(ANNIF_PROJECTS)
 	@classes=''; \
 	for a in $</*; do \
 		classes="$$classes$$(basename "$$a" .tsv)	"; \
@@ -317,7 +280,7 @@ $(ANNIF_PROJECTS)/projects_class.cfg: $(WORK_DIR)/class | $(ANNIF_PROJECTS)
 	done; \
 	$(call generate_ensemble,$$classes,class);
 
-$(ANNIF_PROJECTS)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_PROJECTS)
+$(ANNIF_PROJECTS)/occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_PROJECTS)
 	@occupations=''; \
 	for a in $</*; do \
 		occupations="$$occupations$$(basename "$$a" .tsv)	"; \
@@ -325,7 +288,7 @@ $(ANNIF_PROJECTS)/projects_occupation.cfg: $(WORK_DIR)/occupation | $(ANNIF_PROJ
 	done; \
 	$(call generate_ensemble,$$occupations,occupation);
 
-$(ANNIF_PROJECTS)/projects_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_PROJECTS)
+$(ANNIF_PROJECTS)/core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_PROJECTS)
 	$(call generate_project,$<,core)
 
 extract_vars_2 = $(shell echo $(1) | sed -E 's|.*/([^/]*)/([^-]*).nt|\1 \2|')
@@ -382,3 +345,10 @@ $(ANNIF_PROJECTS)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FU
 $(ANNIF_PROJECTS)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation
 	$(call annif_train,$<)
 	touch $@
+
+$(WORK_DIR) $(WORK_DIR)/class $(WORK_DIR)/occupation \
+$(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation \
+$(OUT_VOCAB) $(OUT_VOCAB)/class $(OUT_VOCAB)/occupation \
+$(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation \
+$(ANNIF_PROJECTS) $(ANNIF_EVAL):
+	mkdir -p $@

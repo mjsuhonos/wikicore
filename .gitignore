@@ -1,14 +1,9 @@
-*.*
+annif-venv
 *.DS_Store
 *.nosync
 *.nt
-*/fulltext/**/*.tsv
+*.jsonl
 
-*/class.nt.gz
-*/occupation.nt.gz
 */data/vocabs
-
-*/annif/.*
-projects.d
-annif-venv
-/data
+*/fulltext/**/*.tsv
+*/projects.d/.*
