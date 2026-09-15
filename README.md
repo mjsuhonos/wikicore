@@ -9,7 +9,7 @@ Usage: make [TARGET] [-j N] [OPTIONS]
 Targets:
 skos
   vocab		Generate Wikidata SKOS vocabs (.nt)
-  fulltext	Generate JSONL text splits (.jsonl)
+  fulltext	Generate Wikipedia text splits (.jsonl)
 
 annif
   config	Generate Annif project configs (.cfg)
