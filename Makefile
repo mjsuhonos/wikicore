@@ -1,11 +1,11 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train compress decompress
+.PHONY: default data vocab fulltext annif config load train compress decompress stats
 
 # Options
 LOCALE    ?= en
 BACKEND   ?= mllm
-RUN_DATE  := $(shell date +%Y%m%d)
+RUN_DATE  ?= $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 
 # Paths
@@ -54,6 +54,7 @@ default:
 	@echo "data"
 	@echo "	vocab		Generate Wikidata SKOS vocabs (.nt)"
 	@echo "	fulltext	Generate JSONL text splits (.jsonl)"
+	@echo "	stats		Generate statistics (.json)"
 	@echo ""
 	@echo "annif"
 	@echo "	config		Generate Annif project configs (.cfg)"
@@ -72,17 +73,19 @@ default:
 
 # Data targets
 #    Time: 2h on M4/10
-data:		vocab fulltext
+data:		vocab fulltext stats
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 
 vocab:		$(OUT_VOCAB)/core.nt \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_VOCAB)/class/%.nt,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES))
 
 fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
+
+stats:		$(OUT_DIR)/stats.json
 
 # Annif targets
 annif:		config load train
@@ -235,6 +238,9 @@ $(OUT_FULLTEXT)/class/%.jsonl: $(WORK_FULLTEXT)/class/%.jsonl | $(OUT_FULLTEXT)/
 
 $(OUT_FULLTEXT)/occupation/%.jsonl: $(WORK_FULLTEXT)/occupation/%.jsonl | $(OUT_FULLTEXT)/occupation
 	$(call split_jsonl,$<,$@)
+
+$(OUT_DIR)/stats.json: $(SOURCE_DIR) | $(OUT_DIR) 
+	python3 stats.py $(OUT_DIR) $< > $@
 
 # Reusable Annif project generator
 # FIXME: fails to generate core vocab name correctly (prefix behaviour)
