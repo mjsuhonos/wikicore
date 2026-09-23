@@ -63,10 +63,16 @@ The build is driven by the GNU Makefile.
 
 | Target | Purpose |
 |---|---|
-| `make data` | Build vocabularies and full-text corpora |
+| `make data` | Build vocabularies, full-text corpora, statistics, and Sankey diagram data |
 | `make vocab` | Generate SKOS N-Triples vocabularies |
 | `make fulltext` | Generate JSONL train/eval/test splits |
-| `make annif` | Generate Annif configs, load vocabularies, and train/evaluate projects |
+| `make stats` | Generate statistics TSV file |
+| `make sankey` | Generate Sankey diagram flow data |
+| `make annif` | Generate Annif configs, load vocabularies, train, and evaluate projects |
+| `make config` | Generate Annif project configurations |
+| `make load` | Load vocabularies into Annif |
+| `make train` | Train Annif projects |
+| `make eval` | Evaluate Annif projects |
 | `make compress` | Gzip generated vocabularies and corpus files with `pigz` |
 | `make decompress` | Decompress release files |
 
@@ -120,9 +126,21 @@ wikicore-YYYYMMDD-LOCALE/
     occupation/*-{train,eval,test}.jsonl.gz
 ```
 
+### Statistics and visualization
+
+The `stats` target generates a comprehensive TSV statistics file using `stats.py`, capturing document counts, unique QIDs, paragraph statistics, link counts, and text length metrics across all corpora. The `sankey` target generates Sankey diagram flow data using `sankey.py` for visualizing the hierarchy and distribution of documents across core, class, and occupation vocabularies.
+
+The release layout includes:
+
+```text
+wikicore-YYYYMMDD-LOCALE/
+  stats.tsv
+  sankey.txt
+```
+
 ### Annif integration
 
-The `annif` target creates project configurations for the core, class, and occupation vocabularies. Class and occupation projects are also combined into ensembles. The backend is configurable through `BACKEND`.
+The `annif` target creates project configurations for the core, class, and occupation vocabularies. Class and occupation projects are also combined into ensembles. The `eval` target evaluates trained Annif projects and outputs results as JSON files. The backend is configurable through `BACKEND`.
 
 ## Design principles
 
@@ -142,8 +160,10 @@ The project was initially motivated by Annif and by the availability of Wikidata
 
 The main implementation files are:
 
-- `Makefile` — data extraction, vocabulary generation, full-text generation, splitting, compression, and Annif workflow
+- `Makefile` — data extraction, vocabulary generation, full-text generation, splitting, compression, Annif workflow, and statistics
 - `wiki2jsonl.py` — Wikipedia-to-JSONL conversion and link/QID extraction
+- `stats.py` — generate build statistics TSV file
+- `sankey.py` — generate Sankey diagram flow data
 - `class/` — class grouping definitions
 - `occupation/` — occupation grouping definitions
 - `wikicore-20260914-en/` — latest generated English release
