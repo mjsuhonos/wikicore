@@ -41,6 +41,9 @@ def main():
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
             subject = row['subject']
+            # Skip aggregation rows (__overall__, __category__*)
+            if subject.startswith('__'):
+                continue
             total_docs = int(row['total_documents'])
             by_subject[subject] = {'total_documents': total_docs}
             
@@ -75,36 +78,26 @@ def main():
     output_lines = []
     
     # First section: wikicore-RUN_DATE -> each top-level category
+    # Format: {label} + (9 - len(count)) spaces + [{count}] + space + {category}
+    # This ensures the ] is at position len(label) + 10
     wikicore_label = f"wikicore-{run_date}"
     for category, total in top_categories:
-        output_lines.append(f"{wikicore_label}  [{total}] {category}")
+        count_str = str(total)
+        padding = 9 - len(count_str)
+        output_lines.append(f"{wikicore_label}{' ' * padding}[{count_str}] {category}")
     
     output_lines.append("")
     
-    # Second section: each category -> its subcategories (sorted alphabetically by subcategory name)
+    # Second section: each category -> its subcategories (sorted alphabetically by category, then subcategory)
+    # Format: {category} + (9 - len(count)) spaces + [{count}] + space + {category}/{subcategory}
+    # This ensures the ] is at position len(category) + 10
     for category in sorted(categories.keys()):
         subcats = categories[category]
         sorted_subcats = sorted(subcats.items(), key=lambda x: x[0])
         for subcat, count in sorted_subcats:
-            output_lines.append(f"{category:<15} [{count}] {category}/{subcat}")
-    
-    output_lines.append("")
-    
-    # Third section: each subcategory -> wikicore-category (sorted alphabetically)
-    for category in sorted(categories.keys()):
-        subcats = categories[category]
-        sorted_subcats = sorted(subcats.items(), key=lambda x: x[0])
-        for subcat, count in sorted_subcats:
-            output_lines.append(f"{category}/{subcat:<15} [{count}]    wikicore-{category}")
-    
-    output_lines.append("")
-    
-    # Fourth section: category roots -> wikicore-full (sorted by count descending)
-    for category, _ in top_categories:
-        if category in ['class', 'occupation']:
-            output_lines.append(f"wikicore-{category:<15} [*]     wikicore-full")
-        else:
-            output_lines.append(f"{category:<15} [*]     wikicore-full")
+            count_str = str(count)
+            padding = 9 - len(count_str)
+            output_lines.append(f"{category}{' ' * padding}[{count_str}] {category}/{subcat}")
     
     # Print output
     print('\n'.join(output_lines))
