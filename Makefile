@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train eval compress decompress stats
+.PHONY: default data vocab fulltext annif config load train eval compress decompress stats sankey
 
 # Options
 LOCALE    ?= en
@@ -55,6 +55,7 @@ default:
 	@echo "	vocab		Generate Wikidata SKOS vocabs (.nt)"
 	@echo "	fulltext	Generate JSONL text splits (.jsonl)"
 	@echo "	stats		Generate statistics (.json)"
+	@echo "	sankey		Generate Sankey diagram data (.txt)"
 	@echo ""
 	@echo "annif"
 	@echo "	config		Generate Annif project configs (.cfg)"
@@ -74,7 +75,7 @@ default:
 
 # Data targets
 #    Time: 2h on M4/10
-data:		vocab fulltext stats
+data:		vocab fulltext stats sankey
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 
@@ -87,6 +88,11 @@ fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
 
 stats:		$(OUT_DIR)/stats.json
+
+sankey:		$(OUT_DIR)/sankey-wikicore-$(RUN_DATE).txt
+
+$(OUT_DIR)/sankey-wikicore-$(RUN_DATE).txt: $(SOURCE_DIR) | $(OUT_DIR)
+	python3 sankey.py $(OUT_DIR) $< > $@
 
 # Annif targets
 annif:		config load train eval

@@ -136,7 +136,7 @@ Wiki Core is currently maintained by a single developer and is intended to remai
 
 ## Related projects and standards
 
-The project was initially motivated by Annif and by the availability of Wikidata/Wikipedia training data such as Wikidata5M. The vocabulary is serialized using SKOS. Related approaches in knowledge organization include LCSH, FAST, YSO, and GND.
+The project was initially motivated by Annif and by the availability of Wikidata/Wikipedia training data such as Wikidata5M. The vocabulary is serialized using SKOS. Related approaches in knowledge organization include FAST, YSO, and GND.
 
 ## Repository references
 
