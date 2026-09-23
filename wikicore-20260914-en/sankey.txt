@@ -1,5 +1,9 @@
+wikicore-20260914  [6128847] __overall__
+wikicore-20260914  [3521671] __category__class
 wikicore-20260914  [3521671] class
+wikicore-20260914  [2502809] __category__occupation
 wikicore-20260914  [2502809] occupation
+wikicore-20260914  [104367] __category__core
 wikicore-20260914  [104367] core
 
 class           [26698] class/aircraft
@@ -124,6 +128,10 @@ occupation/religion        [63371]    wikicore-occupation
 occupation/science         [173008]    wikicore-occupation
 occupation/sports          [681777]    wikicore-occupation
 
+__overall__     [*]     wikicore-full
+__category__class [*]     wikicore-full
 wikicore-class           [*]     wikicore-full
+__category__occupation [*]     wikicore-full
 wikicore-occupation      [*]     wikicore-full
+__category__core [*]     wikicore-full
 core            [*]     wikicore-full
