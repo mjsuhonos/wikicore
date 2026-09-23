@@ -1,6 +1,6 @@
 wikicore-20260722  [3760966] class
-wikicore-20260722   [114737] core
 wikicore-20260722  [2537718] occupation
+wikicore-20260722   [114737] core
 
 class    [29617] class/aircraft
 class    [40324] class/astronomy
