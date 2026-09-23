@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train compress decompress stats
+.PHONY: default data vocab fulltext annif config load train eval compress decompress stats
 
 # Options
 LOCALE    ?= en
@@ -59,7 +59,8 @@ default:
 	@echo "annif"
 	@echo "	config		Generate Annif project configs (.cfg)"
 	@echo "	load		Load vocabs into Annif"
-	@echo "	train		Train and evaluate Annif projects (.json)"
+	@echo "	train		Train Annif projects"
+	@echo "	eval		Evaluate Annif projects (.json)"
 	@echo ""
 	@echo "	compress	Compress files for Github (.gz)"
 	@echo "	decompress	Extract files from Github"
@@ -88,7 +89,7 @@ fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 stats:		$(OUT_DIR)/stats.json
 
 # Annif targets
-annif:		config load train
+annif:		config load train eval
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 			@echo "  BACKEND=$(BACKEND)"
@@ -105,7 +106,11 @@ load:		$(ANNIF_PROJECTS)/.loaded_core \
 
 train:		$(ANNIF_PROJECTS)/.trained_core \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_PROJECTS)/.trained_class_%,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.trained_occupation_%,$(OCCUPATION_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.trained_occupation_%,$(OCCUPATION_FILES))
+
+eval:		$(ANNIF_PROJECTS)/.evaluated_core \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_PROJECTS)/.evaluated_class_%,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.evaluated_occupation_%,$(OCCUPATION_FILES)) \
 
 # GitHub GZip targets
 compress: $(OUT_VOCAB) $(OUT_FULLTEXT)
@@ -196,17 +201,6 @@ $(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_VOCAB)/class | $(SKOS_LAB
 # Make SKOS output for each occupation
 $(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_VOCAB)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,occupation)
-
-# Reusable training split generator
-define split_file
-	input="$(2)"; \
-	dir=$$(dirname "$$input"); \
-	base=$$(basename "$$input" .tsv); \
-	total_lines=$$(wc -l < "$(1)"); \
-	test_lines=$$((total_lines * 10 / 100)); \
-	eval_lines=$$((total_lines * 10 / 100)); \
-	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.tsv"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.tsv"); else print > (dir "/" base "-train.tsv")}'
-endef
 
 # Reusable JSONL split generator
 define split_jsonl
@@ -325,7 +319,19 @@ define annif_train
 	)
 
 	annif train -p $(ANNIF_PROJECTS) -v DEBUG $(project) $<
-	annif eval  -p $(ANNIF_PROJECTS) -v DEBUG $(project) `echo $< | sed 's/train/eval/g'` -M $(ANNIF_EVAL)/$(project).json
+endef
+
+define annif_eval
+	$(eval extracted = $(call extract_vars,$(1)))
+	$(eval prefix = $(word 1,$(extracted)))
+	$(eval class = $(word 2,$(extracted)))
+
+	$(if $(filter-out fulltext,$(prefix)),\
+		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(prefix)_$(class)),\
+		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(class))\
+	)
+
+	annif eval -p $(ANNIF_PROJECTS) -v DEBUG $(project) `echo $(1) | sed 's/train/eval/g'` -M $(ANNIF_EVAL)/$(project).json
 endef
 
 $(ANNIF_PROJECTS)/.loaded_%: $(OUT_DIR)/%.nt | $(ANNIF_PROJECTS)
@@ -350,6 +356,18 @@ $(ANNIF_PROJECTS)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FU
 
 $(ANNIF_PROJECTS)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation
 	$(call annif_train,$<)
+	touch $@
+
+$(ANNIF_PROJECTS)/.evaluated_%: $(ANNIF_PROJECTS)/.trained_% $(OUT_FULLTEXT)/%-eval.tsv | $(OUT_FULLTEXT)
+	$(call annif_eval,$(OUT_FULLTEXT)/%-train.tsv)
+	touch $@
+
+$(ANNIF_PROJECTS)/.evaluated_class_%: $(ANNIF_PROJECTS)/.trained_class_% $(OUT_FULLTEXT)/class/%-eval.tsv | $(OUT_FULLTEXT)/class
+	$(call annif_eval,$(OUT_FULLTEXT)/class/%-train.tsv)
+	touch $@
+
+$(ANNIF_PROJECTS)/.evaluated_occupation_%: $(ANNIF_PROJECTS)/.trained_occupation_% $(OUT_FULLTEXT)/occupation/%-eval.tsv | $(OUT_FULLTEXT)/occupation
+	$(call annif_eval,$(OUT_FULLTEXT)/occupation/%-train.tsv)
 	touch $@
 
 $(WORK_DIR) $(WORK_DIR)/class $(WORK_DIR)/occupation \
