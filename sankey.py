@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate Sankey diagram data from WikiCore stats.json.
+Generate Sankey diagram data from WikiCore stats TSV.
 
 Usage: python3 sankey.py OUT_DIR SOURCE_DIR
 
-Reads stats.json from OUT_DIR and outputs Sankey diagram flow data to stdout.
+Reads stats.tsv from OUT_DIR and outputs Sankey diagram flow data to stdout.
 """
 
-import json
+import csv
 import os
 import sys
 
@@ -20,40 +20,46 @@ def main():
     out_dir = sys.argv[1]
     source_dir = sys.argv[2]
     
-    # Get RUN_DATE from OUT_DIR
+    # Get RUN_DATE from OUT_DIR for label
     # OUT_DIR format: wikicore-YYYYMMDD-LOCALE
     basename = os.path.basename(out_dir)
     run_date = basename.replace('wikicore-', '').split('-')[0]
     
-    # Read stats.json
-    stats_file = os.path.join(out_dir, 'stats.json')
+    # Read stats TSV
+    stats_file = os.path.join(out_dir, 'stats.tsv')
     
     if not os.path.exists(stats_file):
-        print(f"Error: stats.json not found at {stats_file}", file=sys.stderr)
+        print(f"Error: {stats_file} not found", file=sys.stderr)
         print("Please run 'make stats' first.", file=sys.stderr)
         sys.exit(1)
     
+    # Parse TSV: subject, total_documents, ...
+    by_subject = {}
+    by_category = {}
+    
     with open(stats_file, 'r') as f:
-        stats = json.load(f)
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            subject = row['subject']
+            total_docs = int(row['total_documents'])
+            by_subject[subject] = {'total_documents': total_docs}
+            
+            # Build category -> subject mapping
+            category = subject.split('/')[0] if '/' in subject else subject
+            if category not in by_category:
+                by_category[category] = {}
+            by_category[category][subject] = total_docs
     
-    # Extract category and subject data
-    by_category = stats.get('by_category', {})
-    by_subject = stats.get('by_subject', {})
-    
-    # Get top-level categories sorted by total_documents (descending)
-    top_categories = []
-    for category, category_stats in by_category.items():
-        total = category_stats.get('total_documents', 0)
-        if total > 0:
-            top_categories.append((category, total))
-    
-    top_categories.sort(key=lambda x: x[1], reverse=True)
-    
-    # Build category -> subcategories mapping
+    # Build category -> subcategories mapping and compute totals
     categories = {}
+    category_totals = {}
+    
     for subject, subject_stats in by_subject.items():
         category = subject.split('/')[0] if '/' in subject else subject
         total = subject_stats.get('total_documents', 0)
+        
+        # Accumulate category totals
+        category_totals[category] = category_totals.get(category, 0) + total
         
         if category not in categories:
             categories[category] = {}
@@ -61,6 +67,9 @@ def main():
         if '/' in subject:
             subcategory = subject.split('/', 1)[1]
             categories[category][subcategory] = categories[category].get(subcategory, 0) + total
+    
+    # Get top-level categories sorted by total_documents (descending)
+    top_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
     
     # Generate Sankey output
     output_lines = []

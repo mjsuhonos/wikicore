@@ -54,7 +54,7 @@ default:
 	@echo "data"
 	@echo "	vocab		Generate Wikidata SKOS vocabs (.nt)"
 	@echo "	fulltext	Generate JSONL text splits (.jsonl)"
-	@echo "	stats		Generate statistics (.json)"
+	@echo "	stats		Generate statistics (.tsv)"
 	@echo "	sankey		Generate Sankey diagram data (.txt)"
 	@echo ""
 	@echo "annif"
@@ -87,12 +87,9 @@ fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
 
-stats:		$(OUT_DIR)/stats.json
+stats:		$(OUT_DIR)/stats.tsv
 
-sankey:		$(OUT_DIR)/sankey-wikicore-$(RUN_DATE).txt
-
-$(OUT_DIR)/sankey-wikicore-$(RUN_DATE).txt: $(SOURCE_DIR) | $(OUT_DIR)
-	python3 sankey.py $(OUT_DIR) $< > $@
+sankey:		$(OUT_DIR)/sankey.txt
 
 # Annif targets
 annif:		config load train eval
@@ -213,10 +210,7 @@ define split_jsonl
 	input="$(2)"; \
 	dir=$$(dirname "$$input"); \
 	base=$$(basename "$$input" .jsonl); \
-	total_lines=$$(wc -l < "$(1)"); \
-	test_lines=$$((total_lines * 10 / 100)); \
-	eval_lines=$$((total_lines * 10 / 100)); \
-	shuf "$(1)" | awk -v test_lines="$$test_lines" -v eval_lines="$$eval_lines" -v dir="$$dir" -v base="$$base" '{if (NR<=test_lines) print > (dir "/" base "-test.jsonl"); else if (NR<=test_lines+eval_lines) print > (dir "/" base "-eval.jsonl"); else print > (dir "/" base "-train.jsonl")}'
+	cat "$(1)" | awk -v seed="$(RUN_DATE)" -v dir="$$dir" -v base="$$base" 'BEGIN{srand(seed); test_pct=0.1; eval_pct=0.1} {if (rand() < test_pct) print > (dir "/" base "-test.jsonl"); else if (rand() < test_pct+eval_pct) print > (dir "/" base "-eval.jsonl"); else print > (dir "/" base "-train.jsonl")}'
 endef
 
 # Filter JSONL by concept using join with URI lists, then strip URI prefix
@@ -239,8 +233,13 @@ $(OUT_FULLTEXT)/class/%.jsonl: $(WORK_FULLTEXT)/class/%.jsonl | $(OUT_FULLTEXT)/
 $(OUT_FULLTEXT)/occupation/%.jsonl: $(WORK_FULLTEXT)/occupation/%.jsonl | $(OUT_FULLTEXT)/occupation
 	$(call split_jsonl,$<,$@)
 
-$(OUT_DIR)/stats.json: $(SOURCE_DIR) | $(OUT_DIR) 
-	python3 stats.py $(OUT_DIR) $< > $@
+$(OUT_DIR)/stats.tsv: $(OUT_FULLTEXT)/core.jsonl \
+		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
+		$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) | $(OUT_DIR)
+	python3 stats.py $(OUT_DIR) $(SOURCE_DIR) > $@
+
+$(OUT_DIR)/sankey.txt: $(OUT_DIR)/stats.tsv | $(OUT_DIR)
+	python3 sankey.py $(OUT_DIR) $(SOURCE_DIR) > $@
 
 # Reusable Annif project generator
 # FIXME: fails to generate core vocab name correctly (prefix behaviour)

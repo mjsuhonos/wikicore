@@ -4,7 +4,7 @@ Compute statistics for WikiCore JSONL files.
 
 Usage: python3 stats.py OUT_DIR SOURCE_DIR
 
-Outputs JSON statistics to stdout.
+Outputs TSV statistics to stdout.
 """
 
 import json
@@ -12,23 +12,6 @@ import glob
 import os
 import sys
 from collections import defaultdict
-import statistics
-
-
-def percentile(data, p):
-    """Calculate p-th percentile (0-100) using linear interpolation."""
-    if not data:
-        return 0
-    sorted_data = sorted(data)
-    n = len(sorted_data)
-    if n == 1:
-        return sorted_data[0]
-    k = (p / 100) * (n - 1)
-    f = int(k)
-    c = f + 1
-    if c >= n:
-        return sorted_data[f]
-    return sorted_data[f] * (c - k) + sorted_data[c] * (k - f)
 
 
 def extract_subject_name(filepath, fulltext_dir):
@@ -132,90 +115,47 @@ def aggregate_subject_stats(subject_docs):
         total_text_length += text_length
     
     avg_paragraphs = total_paragraphs / total_docs if total_docs > 0 else 0
-    median_paragraphs = statistics.median(para_counts) if para_counts else 0
-    
     avg_links = total_links / total_docs if total_docs > 0 else 0
-    median_links = statistics.median(link_counts) if link_counts else 0
-    
     avg_text_length = total_text_length / total_docs if total_docs > 0 else 0
-    median_text_length = statistics.median(text_lengths) if text_lengths else 0
-    
     avg_links_per_paragraph = total_links / total_paragraphs if total_paragraphs > 0 else 0
     avg_links_per_1000_chars = (total_links / total_text_length * 1000) if total_text_length > 0 else 0
-    
-    # Key percentiles
-    p50 = percentile(link_counts, 50)
-    p95 = percentile(link_counts, 95)
-    p99 = percentile(link_counts, 99)
-    
-    # Link thresholds for N = 0, 1, 2, 3, 5, 10, 20
-    link_thresholds = [0, 1, 2, 3, 5, 10, 20]
-    docs_by_link_threshold = {}
-    for n in link_thresholds:
-        count = sum(1 for x in link_counts if x > n)
-        docs_by_link_threshold[f">{n}"] = count
-    
-    # Simple histograms
-    def simple_histogram(data, bins):
-        """Create a simple histogram with label ranges."""
-        counts = [0] * (len(bins) - 1)
-        for value in data:
-            for i in range(len(bins) - 1):
-                if bins[i] <= value < bins[i + 1] or (i == len(bins) - 2 and value >= bins[i]):
-                    counts[i] += 1
-                    break
-        
-        labels = []
-        for i in range(len(bins) - 1):
-            if bins[i + 1] == float('inf'):
-                labels.append(f"{bins[i]}+")
-            else:
-                labels.append(f"{bins[i]}-{bins[i + 1]}")
-        
-        return dict(zip(labels, counts))
-    
-    link_bins = [0, 1, 5, 10, 20, float('inf')]
-    links_hist = simple_histogram(link_counts, link_bins)
-    
-    paragraph_bins = [1, 2, 3, 5, float('inf')]
-    paragraphs_hist = simple_histogram(para_counts, paragraph_bins)
-    
-    text_length_bins = [0, 500, 1000, 5000, float('inf')]
-    text_length_hist = simple_histogram(text_lengths, text_length_bins)
     
     return {
         'total_documents': total_docs,
         'unique_qids': len(all_qids),
         'qids_with_wikipedia': docs_with_enwp,
-        
-        # Paragraph statistics
         'documents_with_2_plus_paragraphs': docs_with_2_plus_para,
         'total_paragraphs': total_paragraphs,
         'avg_paragraphs_per_document': round(avg_paragraphs, 2),
-        'median_paragraphs_per_document': round(median_paragraphs, 2),
-        'paragraphs_histogram': paragraphs_hist,
-        
-        # Link statistics
         'documents_with_links': docs_with_1_plus_link,
         'total_links': total_links,
         'unique_linked_qids': len(all_linked_qids),
         'avg_links_per_document': round(avg_links, 2),
-        'median_links_per_document': round(median_links, 2),
-        'p50_links': round(p50, 2),
-        'p95_links': round(p95, 2),
-        'p99_links': round(p99, 2),
-        'link_thresholds': docs_by_link_threshold,
-        'links_histogram': links_hist,
-        
-        # Text length statistics
         'avg_text_length_chars': round(avg_text_length),
-        'median_text_length_chars': round(median_text_length),
-        'text_length_histogram': text_length_hist,
-        
-        # Link density
         'avg_links_per_paragraph': round(avg_links_per_paragraph, 2),
         'avg_links_per_1000_chars': round(avg_links_per_1000_chars, 2),
     }
+
+
+def get_tsv_row(subject_name, stats):
+    """Convert stats dict to TSV row."""
+    fields = [
+        subject_name,
+        stats.get('total_documents', 0),
+        stats.get('unique_qids', 0),
+        stats.get('qids_with_wikipedia', 0),
+        stats.get('documents_with_2_plus_paragraphs', 0),
+        stats.get('total_paragraphs', 0),
+        stats.get('avg_paragraphs_per_document', 0),
+        stats.get('documents_with_links', 0),
+        stats.get('total_links', 0),
+        stats.get('unique_linked_qids', 0),
+        stats.get('avg_links_per_document', 0),
+        stats.get('avg_text_length_chars', 0),
+        stats.get('avg_links_per_paragraph', 0),
+        stats.get('avg_links_per_1000_chars', 0),
+    ]
+    return '\t'.join(str(f) for f in fields)
 
 
 def process_unmapped(filepath):
@@ -325,21 +265,11 @@ def main():
                 'documents_with_2_plus_paragraphs': 0,
                 'total_paragraphs': 0,
                 'avg_paragraphs_per_document': 0,
-                'median_paragraphs_per_document': 0,
-                'paragraphs_histogram': {},
                 'documents_with_links': 0,
                 'total_links': 0,
                 'unique_linked_qids': 0,
                 'avg_links_per_document': 0,
-                'median_links_per_document': 0,
-                'p50_links': 0,
-                'p95_links': 0,
-                'p99_links': 0,
-                'link_thresholds': {},
-                'links_histogram': {},
                 'avg_text_length_chars': 0,
-                'median_text_length_chars': 0,
-                'text_length_histogram': {},
                 'avg_links_per_paragraph': 0,
                 'avg_links_per_1000_chars': 0,
             }
@@ -353,20 +283,37 @@ def main():
     
     overall_stats = aggregate_subject_stats(all_docs)
     
-    # Build final output
-    output = {
-        'overall': overall_stats,
-        'by_category': category_stats,
-        'by_subject': by_subject,
-        'metadata': {
-            'total_subjects': len(by_subject),
-            'total_files_processed': len(jsonl_files),
-            'unmapped_count': len(unmapped_docs),
-        },
-    }
+    # Write TSV output to stdout
+    tsv_header = [
+        'subject',
+        'total_documents',
+        'unique_qids',
+        'qids_with_wikipedia',
+        'documents_with_2_plus_paragraphs',
+        'total_paragraphs',
+        'avg_paragraphs_per_document',
+        'documents_with_links',
+        'total_links',
+        'unique_linked_qids',
+        'avg_links_per_document',
+        'avg_text_length_chars',
+        'avg_links_per_paragraph',
+        'avg_links_per_1000_chars',
+    ]
     
-    # Print JSON to stdout
-    print(json.dumps(output, indent=2))
+    print('\t'.join(tsv_header))
+    
+    # Overall row
+    print(get_tsv_row('__overall__', overall_stats))
+    
+    # Category rows
+    for category in sorted(category_stats.keys()):
+        if category_stats[category]:
+            print(get_tsv_row(f'__category__{category}', category_stats[category]))
+    
+    # Subject rows
+    for subject in sorted(by_subject.keys()):
+        print(get_tsv_row(subject, by_subject[subject]))
 
 
 if __name__ == '__main__':
