@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train eval compress decompress stats sankey
+.PHONY: default data vocab fulltext annif config load train eval optimize compress decompress stats sankey
 
 # Options
 LOCALE    ?= en
@@ -10,6 +10,7 @@ VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 
 # Paths
 ROOT_DIR         := $(PWD)
+ANNIF            ?= $(ROOT_DIR)/../Annif.nosync/.venv/bin/annif
 SOURCE_DIR       := $(ROOT_DIR)/source.nosync
 WORK_DIR         := $(ROOT_DIR)/working.nosync
 OUT_DIR          := $(ROOT_DIR)/wikicore-$(RUN_DATE)-$(LOCALE)
@@ -61,6 +62,7 @@ default:
 	@echo "	config		Generate Annif project configs (.cfg)"
 	@echo "	load		Load vocabs into Annif"
 	@echo "	train		Train Annif projects"
+	@echo "	optimize	Optimize Annif projects (.tsv)"
 	@echo "	eval		Evaluate Annif projects (.json)"
 	@echo ""
 	@echo "	compress	Compress files for Github (.gz)"
@@ -71,6 +73,7 @@ default:
 	@echo "	RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
 	@echo "	LOCALE	Default 'en'"
 	@echo "	BACKEND	Default 'mllm'"
+	@echo "	ANNIF		Default '$(ANNIF)'"
 	@echo ""
 
 # Data targets
@@ -92,7 +95,7 @@ stats:		$(OUT_DIR)/stats.tsv
 sankey:		$(OUT_DIR)/sankey.txt
 
 # Annif targets
-annif:		config load train eval
+annif:		config load train eval optimize
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 			@echo "  BACKEND=$(BACKEND)"
@@ -114,6 +117,10 @@ train:		$(ANNIF_PROJECTS)/.trained_core \
 eval:		$(ANNIF_PROJECTS)/.evaluated_core \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_PROJECTS)/.evaluated_class_%,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.evaluated_occupation_%,$(OCCUPATION_FILES)) \
+
+optimize:	$(ANNIF_PROJECTS)/.optimized_core \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_PROJECTS)/.optimized_class_%,$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/.optimized_occupation_%,$(OCCUPATION_FILES)) \
 
 # GitHub GZip targets
 compress: $(OUT_VOCAB) $(OUT_FULLTEXT)
@@ -194,7 +201,7 @@ $(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupatio
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # Make SKOS output for core concepts
-$(OUT_VOCAB)/core.nt: $(WORK_DIR)/core.tsv
+$(OUT_VOCAB)/core.nt: $(WORK_DIR)/core.tsv | $(OUT_VOCAB)
 	$(call generate_skos_nt,$<,$@)
 
 # Make SKOS output for each class
@@ -242,31 +249,35 @@ $(OUT_DIR)/sankey.txt: $(OUT_DIR)/stats.tsv | $(OUT_DIR)
 	python3 sankey.py $(OUT_DIR) $(SOURCE_DIR) > $@
 
 # Reusable Annif project generator
-# FIXME: fails to generate core vocab name correctly (prefix behaviour)
 define generate_project
 	subdir=$$(basename $(1) .tsv); \
-	echo "" >> $@; \
-	echo "[wikicore_$(LOCALE)_$(BACKEND)_$(2)_$$subdir]" >> $@; \
-	echo "name = WikiCore $(BACKEND) $(2) $$subdir ($(LOCALE))" >> $@; \
-	echo "backend = $(BACKEND)" >> $@; \
-	echo "language = $(LOCALE)" >> $@; \
-	echo "analyzer = snowball(english)" >> $@; \
-	echo "limit = 100" >> $@; \
-	echo "vocab = wikicore-$(RUN_DATE)-$(2)-$$subdir-$(LOCALE)" >> $@; \
-	echo "" >> $@; \
-	echo "[wikicore_$(LOCALE)_filter_$(2)_$$subdir]" >> $@; \
-	echo "name = WikiCore Filter $(2) $$subdir ($(LOCALE))" >> $@; \
-	echo "backend = threshold_ensemble" >> $@; \
-	echo "threshold = 0" >> $@; \
-	echo "language = $(LOCALE)" >> $@; \
-	echo "sources = wikicore_$(LOCALE)_$(BACKEND)_$(2)_$$subdir" >> $@; \
-	echo "vocab = wikicore-$(RUN_DATE)-$(2)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$(2)/$$subdir)" >> $@; \
+	if [ "$(2)" = "$$subdir" ]; then \
+		echo "" >> $@; \
+		echo "[wikicore_$(LOCALE)_$(BACKEND)_$$subdir]" >> $@; \
+		echo "name = WikiCore $(BACKEND) $$subdir ($(LOCALE))" >> $@; \
+		echo "backend = $(BACKEND)" >> $@; \
+		echo "language = $(LOCALE)" >> $@; \
+		echo "analyzer = snowball(english)" >> $@; \
+		echo "limit = 100" >> $@; \
+		echo "vocab = wikicore-$(RUN_DATE)-$$subdir-$(LOCALE)" >> $@; \
+		echo "# vocab = wikicore-$(RUN_DATE)-$(2)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$$subdir)" >> $@; \
+	else \
+		echo "" >> $@; \
+		echo "[wikicore_$(LOCALE)_$(BACKEND)_$(2)_$$subdir]" >> $@; \
+		echo "name = WikiCore $(BACKEND) $(2) $$subdir ($(LOCALE))" >> $@; \
+		echo "backend = $(BACKEND)" >> $@; \
+		echo "language = $(LOCALE)" >> $@; \
+		echo "analyzer = snowball(english)" >> $@; \
+		echo "limit = 100" >> $@; \
+		echo "vocab = wikicore-$(RUN_DATE)-$(2)-$$subdir-$(LOCALE)" >> $@; \
+		echo "# vocab = wikicore-$(RUN_DATE)-$(2)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$(2)/$$subdir)" >> $@; \
+	fi; \
 	echo "# Vocab size: $$(wc -l < $(1))" >> $@
 endef
 
 define generate_ensemble
 	group=$(1); \
-	sources=$$(echo "$$group" | awk -F'\t' -v prefix="wikicore_$(LOCALE)_filter_$(2)_" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF && $$(i+1) != ""?",":"")}}}'); \
+	sources=$$(echo "$$group" | awk -F'\t' -v prefix="wikicore_$(LOCALE)_$(BACKEND)_$(2)_" '{for(i=1;i<=NF;i++){if($$i != ""){printf "%s%s", prefix $$i, (i<NF && $$(i+1) != ""?",":"")}}}'); \
 	echo "" >> $@; \
 	echo "[wikicore_$(LOCALE)_ensemble_$(2)]" >> $@; \
 	echo "name = WikiCore Ensemble $(2) ($(LOCALE))" >> $@; \
@@ -303,15 +314,15 @@ define annif_load
 	$(eval prefix = $(word 1,$(extracted)))
 	$(eval class = $(word 2,$(extracted)))
 
-	$(if $(filter-out $(shell basename $(OUT_DIR)),$(prefix)),\
+	$(if $(filter-out vocab $(shell basename $(OUT_DIR)),$(prefix)),\
 		$(eval vocab = wikicore-$(RUN_DATE)-$(prefix)-$(class)-$(LOCALE)),\
 		$(eval vocab = wikicore-$(RUN_DATE)-$(class)-$(LOCALE))\
 	)
 
-	annif load-vocab -p $(ANNIF_PROJECTS) -f -v DEBUG -L $(LOCALE) $(vocab) $<
+	$(ANNIF) load-vocab -p $(ANNIF_PROJECTS) -f -v DEBUG -L $(LOCALE) $(vocab) $<
 endef
 
-extract_vars = $(shell echo $(1) | sed -E 's|.*/([^/]*)/([^-]*)-train.tsv|\1 \2|')
+extract_vars = $(shell echo $(1) | sed -E 's,.*/([^/]*)/([^-]*)-train\.(tsv|jsonl),\1 \2,')
 
 define annif_train
 	$(eval extracted = $(call extract_vars,$(1)))
@@ -323,7 +334,7 @@ define annif_train
 		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(class))\
 	)
 
-	annif train -p $(ANNIF_PROJECTS) -v DEBUG $(project) $<
+	$(ANNIF) train -p $(ANNIF_PROJECTS) -v DEBUG $(project) $(1)
 endef
 
 define annif_eval
@@ -336,43 +347,68 @@ define annif_eval
 		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(class))\
 	)
 
-	annif eval -p $(ANNIF_PROJECTS) -v DEBUG $(project) `echo $(1) | sed 's/train/eval/g'` -M $(ANNIF_EVAL)/$(project).json
+	$(ANNIF) eval -p $(ANNIF_PROJECTS) -v DEBUG $(project) `echo $(1) | sed 's/train/eval/g'` -M $(ANNIF_EVAL)/$(project).json
 endef
 
-$(ANNIF_PROJECTS)/.loaded_%: $(OUT_DIR)/%.nt | $(ANNIF_PROJECTS)
+define annif_optimize
+	$(eval extracted = $(call extract_vars,$(1)))
+	$(eval prefix = $(word 1,$(extracted)))
+	$(eval class = $(word 2,$(extracted)))
+
+	$(if $(filter-out fulltext,$(prefix)),\
+		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(prefix)_$(class)),\
+		$(eval project = wikicore_$(LOCALE)_$(BACKEND)_$(class))\
+	)
+
+	$(ANNIF) optimize -p $(ANNIF_PROJECTS) -v DEBUG $(project) `echo $(1) | sed 's/train/test/g'` -r $(ANNIF_EVAL)/$(project).tsv
+endef
+
+$(ANNIF_PROJECTS)/.loaded_%: $(OUT_VOCAB)/%.nt | $(ANNIF_PROJECTS)
 	$(call annif_load,$<)
 	touch $@
 
-$(ANNIF_PROJECTS)/.loaded_class_%: $(OUT_DIR)/class/%.nt | $(ANNIF_PROJECTS)
+$(ANNIF_PROJECTS)/.loaded_class_%: $(OUT_VOCAB)/class/%.nt | $(ANNIF_PROJECTS)
 	$(call annif_load,$<)
 	touch $@
 
-$(ANNIF_PROJECTS)/.loaded_occupation_%: $(OUT_DIR)/occupation/%.nt | $(ANNIF_PROJECTS)
+$(ANNIF_PROJECTS)/.loaded_occupation_%: $(OUT_VOCAB)/occupation/%.nt | $(ANNIF_PROJECTS)
 	$(call annif_load,$<)
 	touch $@
 
-$(ANNIF_PROJECTS)/.trained_%: $(OUT_FULLTEXT)/%-train.tsv | $(OUT_FULLTEXT)
-	$(call annif_train,$<)
+$(ANNIF_PROJECTS)/.trained_%: $(ANNIF_PROJECTS)/.loaded_% $(OUT_FULLTEXT)/%-train.jsonl | $(OUT_FULLTEXT)
+	$(call annif_train,$(OUT_FULLTEXT)/$*-train.jsonl)
 	touch $@
 
-$(ANNIF_PROJECTS)/.trained_class_%: $(OUT_FULLTEXT)/class/%-train.tsv | $(OUT_FULLTEXT)/class
-	$(call annif_train,$<)
+$(ANNIF_PROJECTS)/.trained_class_%: $(ANNIF_PROJECTS)/.loaded_class_% $(OUT_FULLTEXT)/class/%-train.jsonl | $(OUT_FULLTEXT)/class
+	$(call annif_train,$(OUT_FULLTEXT)/class/$*-train.jsonl)
 	touch $@
 
-$(ANNIF_PROJECTS)/.trained_occupation_%: $(OUT_FULLTEXT)/occupation/%-train.tsv | $(OUT_FULLTEXT)/occupation
-	$(call annif_train,$<)
+$(ANNIF_PROJECTS)/.trained_occupation_%: $(ANNIF_PROJECTS)/.loaded_occupation_% $(OUT_FULLTEXT)/occupation/%-train.jsonl | $(OUT_FULLTEXT)/occupation
+	$(call annif_train,$(OUT_FULLTEXT)/occupation/$*-train.jsonl)
 	touch $@
 
-$(ANNIF_PROJECTS)/.evaluated_%: $(ANNIF_PROJECTS)/.trained_% $(OUT_FULLTEXT)/%-eval.tsv | $(OUT_FULLTEXT)
-	$(call annif_eval,$(OUT_FULLTEXT)/%-train.tsv)
+$(ANNIF_PROJECTS)/.evaluated_%: $(ANNIF_PROJECTS)/.trained_% $(OUT_FULLTEXT)/%-eval.jsonl | $(OUT_FULLTEXT) $(ANNIF_EVAL)
+	$(call annif_eval,$(OUT_FULLTEXT)/$*-train.jsonl)
 	touch $@
 
-$(ANNIF_PROJECTS)/.evaluated_class_%: $(ANNIF_PROJECTS)/.trained_class_% $(OUT_FULLTEXT)/class/%-eval.tsv | $(OUT_FULLTEXT)/class
-	$(call annif_eval,$(OUT_FULLTEXT)/class/%-train.tsv)
+$(ANNIF_PROJECTS)/.evaluated_class_%: $(ANNIF_PROJECTS)/.trained_class_% $(OUT_FULLTEXT)/class/%-eval.jsonl | $(OUT_FULLTEXT)/class $(ANNIF_EVAL)
+	$(call annif_eval,$(OUT_FULLTEXT)/class/$*-train.jsonl)
 	touch $@
 
-$(ANNIF_PROJECTS)/.evaluated_occupation_%: $(ANNIF_PROJECTS)/.trained_occupation_% $(OUT_FULLTEXT)/occupation/%-eval.tsv | $(OUT_FULLTEXT)/occupation
-	$(call annif_eval,$(OUT_FULLTEXT)/occupation/%-train.tsv)
+$(ANNIF_PROJECTS)/.evaluated_occupation_%: $(ANNIF_PROJECTS)/.trained_occupation_% $(OUT_FULLTEXT)/occupation/%-eval.jsonl | $(OUT_FULLTEXT)/occupation $(ANNIF_EVAL)
+	$(call annif_eval,$(OUT_FULLTEXT)/occupation/$*-train.jsonl)
+	touch $@
+
+$(ANNIF_PROJECTS)/.optimized_%: $(ANNIF_PROJECTS)/.evaluated_% $(OUT_FULLTEXT)/%-test.jsonl | $(OUT_FULLTEXT) $(ANNIF_EVAL)
+	$(call annif_optimize,$(OUT_FULLTEXT)/$*-train.jsonl)
+	touch $@
+
+$(ANNIF_PROJECTS)/.optimized_class_%: $(ANNIF_PROJECTS)/.evaluated_class_% $(OUT_FULLTEXT)/class/%-test.jsonl | $(OUT_FULLTEXT)/class $(ANNIF_EVAL)
+	$(call annif_optimize,$(OUT_FULLTEXT)/class/$*-train.jsonl)
+	touch $@
+
+$(ANNIF_PROJECTS)/.optimized_occupation_%: $(ANNIF_PROJECTS)/.evaluated_occupation_% $(OUT_FULLTEXT)/occupation/%-test.jsonl | $(OUT_FULLTEXT)/occupation $(ANNIF_EVAL)
+	$(call annif_optimize,$(OUT_FULLTEXT)/occupation/$*-train.jsonl)
 	touch $@
 
 $(WORK_DIR) $(WORK_DIR)/class $(WORK_DIR)/occupation \
