@@ -286,7 +286,7 @@ define generate_ensemble
 		echo "name = WikiCore Ensemble $(1) ($(LOCALE))"; \
 		echo "backend = ensemble"; \
 		echo "language = $(LOCALE)"; \
-		echo "limit = 10000"; \
+		echo "limit = 100"; \
 		echo "sources = $$(printf '%s\n' $(2) | sed 's/^,//')"; \
 		echo "vocab = wikicore-$(RUN_DATE)-$(1)-$(LOCALE)"; \
 	} > $(3)
