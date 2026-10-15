@@ -66,8 +66,8 @@ default:
 	@echo "	config		Generate Annif project configs (.cfg)"
 	@echo "	load		Load vocabs into Annif"
 	@echo "	train		Train Annif projects"
-	@echo "	optimize	Optimize Annif projects (.tsv)"
-	@echo "	eval		Evaluate Annif projects (.json)"
+	@echo "optimize		Optimize Annif projects (.tsv)"
+	@echo "eval			Evaluate Annif projects (.json)"
 	@echo ""
 	@echo "	compress	Compress files for Github (.gz)"
 	@echo "	decompress	Extract files from Github"
@@ -99,7 +99,7 @@ stats:		$(OUT_DIR)/stats.tsv
 sankey:		$(OUT_DIR)/sankey.txt
 
 # Annif targets
-annif:		config load train eval optimize
+annif:		config load train
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 			@echo "  BACKEND=$(BACKEND)"
@@ -198,11 +198,11 @@ $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROP
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
 # Generate URI lists for each class
-$(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv $(WORK_DIR)/class | $(PROPS_P31_NT) $(WORK_DIR)/class
+$(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv | $(PROPS_P31_NT) $(WORK_DIR)/class
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # Generate URI lists for each occupation
-$(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv $(WORK_DIR)/occupation | $(PROPS_P106_NT) $(WORK_DIR)/occupation
+$(WORK_DIR)/occupation/%.tsv: $(ROOT_DIR)/occupation/%.tsv | $(PROPS_P106_NT) $(WORK_DIR)/occupation
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P106_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
 
 # Make SKOS output for core concepts
@@ -210,11 +210,11 @@ $(OUT_VOCAB)/core.nt: $(WORK_DIR)/core.tsv | $(OUT_VOCAB)
 	$(call generate_skos_nt,$<,$@)
 
 # Make SKOS output for each class
-$(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv $(OUT_VOCAB)/class | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+$(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv | $(OUT_VOCAB)/class $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,class)
 
 # Make SKOS output for each occupation
-$(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv $(OUT_VOCAB)/occupation | $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+$(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv | $(OUT_VOCAB)/occupation $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,occupation)
 
 # Reusable JSONL split generator
