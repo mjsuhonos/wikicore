@@ -44,6 +44,7 @@ ANNIF_DATADIR    := $(OUT_DIR)/data
 ANNIF_PROJECTS   := $(OUT_DIR)/projects.d
 ANNIF_VOCABS     := $(ANNIF_DATADIR)/vocabs
 ANNIF_MODELS     := $(ANNIF_DATADIR)/projects
+ANNIF_STAMP      := .trained
 ANNIF_EVAL       := $(ANNIF_DATADIR)/eval
 export ANNIF_DATADIR
 
@@ -69,14 +70,14 @@ default:
 	@echo "optimize		Optimize Annif projects (.tsv)"
 	@echo "eval			Evaluate Annif projects (.json)"
 	@echo ""
-	@echo "	compress	Compress files for Github (.gz)"
-	@echo "	decompress	Extract files from Github"
+	@echo "compress		Compress files for Github (.gz)"
+	@echo "decompress		Extract files from Github"
 	@echo ""
 	@echo "Options:"
 	@echo "	-j N		Number of parallel jobs ('-j' alone means all CPUs)"
 	@echo "	RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
-	@echo "	LOCALE	Default 'en'"
-	@echo "	BACKEND	Default 'mllm'"
+	@echo "	LOCALE		Default 'en'"
+	@echo "	BACKEND		Default 'mllm'"
 	@echo "	ANNIF		Default '$(ANNIF)'"
 	@echo ""
 
@@ -115,9 +116,9 @@ load:		$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl,$(OCCUPATION_FILES)) \
 
-train:		$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_core \
-			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_class_%,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%,$(OCCUPATION_FILES))
+train:		$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_core/$(ANNIF_STAMP) \
+			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_class_%/$(ANNIF_STAMP),$(CLASS_FILES)) \
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%/$(ANNIF_STAMP),$(OCCUPATION_FILES))
 
 eval:		$(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_core.json \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_class_%.json,$(CLASS_FILES)) \
@@ -336,8 +337,9 @@ define annif_load
 endef
 
 define annif_train
-	$(ANNIF) train -p $(ANNIF_PROJECTS) -v DEBUG $(notdir $@) $(1)
-	test -n "$$(ls -A $@)"
+	$(ANNIF) train -p $(ANNIF_PROJECTS) -v DEBUG $(notdir $(@D)) $(1)
+	test -n "$$(ls -A $(@D) | grep -v '^$(ANNIF_STAMP)')"
+	touch $@
 endef
 
 define annif_eval
@@ -359,13 +361,13 @@ $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl: $(OUT_
 	$(call annif_load)
 
 # Trained projects: $(ANNIF_MODELS)/<project_id>/ (model files written by Annif)
-$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_core: $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/core-train.jsonl | $(ANNIF_PROJECTS)
+$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_core/$(ANNIF_STAMP): $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/core-train.jsonl | $(ANNIF_PROJECTS)
 	$(call annif_train,$(OUT_FULLTEXT)/core-train.jsonl)
 
-$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_class_%: $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/class/%-train.jsonl | $(ANNIF_PROJECTS)
+$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_class_%/$(ANNIF_STAMP): $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/class/%-train.jsonl | $(ANNIF_PROJECTS)
 	$(call annif_train,$(OUT_FULLTEXT)/class/$*-train.jsonl)
 
-$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%: $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/occupation/%-train.jsonl | $(ANNIF_PROJECTS)
+$(ANNIF_MODELS)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%/$(ANNIF_STAMP): $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl $(OUT_FULLTEXT)/occupation/%-train.jsonl | $(ANNIF_PROJECTS)
 	$(call annif_train,$(OUT_FULLTEXT)/occupation/$*-train.jsonl)
 
 # Evaluated projects: $(ANNIF_EVAL)/<project_id>.json
