@@ -44,8 +44,8 @@ ANNIF_DATADIR    := $(OUT_DIR)/data
 ANNIF_PROJECTS   := $(OUT_DIR)/projects.d
 ANNIF_VOCABS     := $(ANNIF_DATADIR)/vocabs
 ANNIF_MODELS     := $(ANNIF_DATADIR)/projects
-ANNIF_STAMP      := .trained
 ANNIF_EVAL       := $(ANNIF_DATADIR)/eval
+ANNIF_STAMP      := .trained
 export ANNIF_DATADIR
 
 # Default (help) target
@@ -112,6 +112,9 @@ config:		$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_core.cfg \
 			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_ensemble_occupation.cfg \
 			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_ensemble_all.cfg \
 
+# TODO: load does not include occupation / class / all
+# NB: "annif load" uses > 30GB of RAM for parsing the full RDF of 'all'
+# this is required (eg. as opposed to combining CSV) to maintain skos:inScheme triples
 load:		$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl,$(OCCUPATION_FILES)) \
@@ -274,7 +277,7 @@ define generate_project
 		echo "backend = $(BACKEND)"; \
 		echo "language = $(LOCALE)"; \
 		echo "analyzer = snowball(english)"; \
-		echo "limit = 100"; \
+		echo "limit = 20"; \
 		echo "threshold = 0"; \
 		echo "vocab = $$vocab"; \
 		echo "# vocab = $$alt"; \
@@ -289,7 +292,7 @@ define generate_ensemble
 		echo "name = WikiCore Ensemble $(1) ($(LOCALE))"; \
 		echo "backend = ensemble"; \
 		echo "language = $(LOCALE)"; \
-		echo "limit = 100"; \
+		echo "limit = 20"; \
 		echo "sources = $$(printf '%s\n' $(2) | sed 's/^,//')"; \
 		echo "vocab = wikicore-$(RUN_DATE)-$(1)-$(LOCALE)"; \
 	} > $(3)
