@@ -6,6 +6,7 @@ SHELL := /bin/bash
 LOCALE    ?= en
 BACKEND   ?= mllm
 RUN_DATE  ?= $(shell date +%Y%m%d)
+WIKI_URIS  ?= 0
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 
 # Paths
@@ -78,6 +79,7 @@ default:
 	@echo "	RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
 	@echo "	LOCALE		Default 'en'"
 	@echo "	BACKEND		Default 'mllm'"
+	@echo "	WIKI_URIS	Default '0' (set '1' to emit Wikipedia URIs instead of Wikidata QIDs in vocabs)"
 	@echo "	ANNIF		Default '$(ANNIF)'"
 	@echo ""
 
@@ -194,6 +196,10 @@ define generate_skos_nt
 	if [ -z "$3" ]; then \
 		LC_ALL=C join $1 $(PROPS_P361_NT) | sed 's|<http://www.wikidata.org/prop/direct/P361>|<http://www.w3.org/2004/02/skos/core#related>|g' >> $2 ; \
 		LC_ALL=C join $1 $(PROPS_P279_NT) | sed 's|<http://www.wikidata.org/prop/direct/P279>|<http://www.w3.org/2004/02/skos/core#related>|g' >> $2 ; \
+	fi ; \
+	if [ "$(WIKI_URIS)" = "1" ]; then \
+		LC_ALL=C awk -v sf=$(SITELINKS_MAP) 'BEGIN{while((getline<sf)>0)m[$$1]=$$2} {if($$1 in m)$$1=m[$$1]; print}' $2 > $2.tmp ; \
+		mv $2.tmp $2 ; \
 	fi
 endef
 

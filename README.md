@@ -87,7 +87,7 @@ A typical data build is:
 make data -j 8
 ```
 
-The main options are `RUN_DATE` (release directory date), `LOCALE` (default `en`), and `BACKEND` (default `mllm` for Annif).
+The main options are `RUN_DATE` (release directory date), `LOCALE` (default `en`), and `BACKEND` (default `mllm` for Annif). Set `WIKI_URIS=1` to emit Wikipedia URIs instead of Wikidata QID URIs in the vocabularies (eg. trained suggestions will return Wikipedia links).
 
 ### Vocabulary generation
 
