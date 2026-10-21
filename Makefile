@@ -33,7 +33,7 @@ PREFLABELS_TSV    := $(WORK_DIR)/preflabels-$(LOCALE).tsv
 DIAG_DIR         := $(OUT_DIR)/diagnostics
 P31_LABELS_TSV   := $(DIAG_DIR)/P31_labels.tsv
 P106_LABELS_TSV  := $(DIAG_DIR)/P106_labels.tsv
-UNUSED_TSV       := $(DIAG_DIR)/unused.tsv
+UNUSED_TSV       := $(WORK_DIR)/unused.tsv
 UNUSED_LABELS_TSV := $(DIAG_DIR)/unused_labels.tsv
 DIAG_SUMMARY     := $(DIAG_DIR)/summary.tsv
 
@@ -99,10 +99,12 @@ data:		vocab fulltext stats sankey diagnostics
 			@echo "  RUN_DATE=$(RUN_DATE)"
 
 vocab:		$(OUT_VOCAB)/core.nt \
+			$(OUT_VOCAB)/unused.nt \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_VOCAB)/class/%.nt,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES))
 
 fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
+			$(OUT_FULLTEXT)/unused.jsonl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
 
@@ -245,8 +247,9 @@ $(P31_LABELS_TSV): $(WIKIDATA_NT) $(PREFLABELS_TSV) | $(DIAG_DIR)
 $(P106_LABELS_TSV): $(WIKIDATA_NT) $(PREFLABELS_TSV) | $(DIAG_DIR)
 	$(call generate_prop_labels,$@,P106)
 
-# Diagnostics: sitelink URIs not claimed by any vocab (core / class / occupation)
-$(UNUSED_TSV): $(SITELINKS_URIS) $(WORK_DIR)/core.tsv $(WORK_DIR)/class $(WORK_DIR)/occupation | $(DIAG_DIR)
+# Diagnostics: sitelink URIs not claimed by any vocab (core / class / occupation);
+# doubles as the source URI list for the 'unused' vocab / corpus
+$(UNUSED_TSV): $(SITELINKS_URIS) $(WORK_DIR)/core.tsv | $(WORK_DIR)/class $(WORK_DIR)/occupation
 	cat $(WORK_DIR)/core.tsv $(WORK_DIR)/class/*.tsv $(WORK_DIR)/occupation/*.tsv \
 		| LC_ALL=C sort -u \
 		| LC_ALL=C join -v 1 $(SITELINKS_URIS) - > $@
@@ -292,6 +295,10 @@ $(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv | $(OUT_VOCAB)/class $(SKOS_LAB
 $(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv | $(OUT_VOCAB)/occupation $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,occupation)
 
+# Make SKOS output for unused concepts
+$(OUT_VOCAB)/unused.nt: $(UNUSED_TSV) | $(OUT_VOCAB) $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
+	$(call generate_skos_nt,$<,$@)
+
 # Reusable JSONL split generator
 define split_jsonl
 	input="$(2)"; \
@@ -304,6 +311,9 @@ endef
 $(WORK_FULLTEXT)/core.jsonl: $(WORK_DIR)/core.tsv $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)
 	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
 
+$(WORK_FULLTEXT)/unused.jsonl: $(UNUSED_TSV) $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)
+	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
+
 $(WORK_FULLTEXT)/class/%.jsonl: $(WORK_DIR)/class/%.tsv $(WIKIPEDIA_TSV) | $(WORK_FULLTEXT)/class
 	LC_ALL=C join $< $(WIKIPEDIA_TSV) | cut -d' ' -f2- > $@
 
@@ -312,6 +322,9 @@ $(WORK_FULLTEXT)/occupation/%.jsonl: $(WORK_DIR)/occupation/%.tsv $(WIKIPEDIA_TS
 
 # Generate train/eval/test splits for JSONL
 $(OUT_FULLTEXT)/core.jsonl: $(WORK_FULLTEXT)/core.jsonl | $(OUT_FULLTEXT)
+	$(call split_jsonl,$<,$@)
+
+$(OUT_FULLTEXT)/unused.jsonl: $(WORK_FULLTEXT)/unused.jsonl | $(OUT_FULLTEXT)
 	$(call split_jsonl,$<,$@)
 
 $(OUT_FULLTEXT)/class/%.jsonl: $(WORK_FULLTEXT)/class/%.jsonl | $(OUT_FULLTEXT)/class
