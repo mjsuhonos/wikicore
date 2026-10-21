@@ -29,11 +29,13 @@ WIKIPEDIA_TSV    := $(WORK_DIR)/enwiki_corpus.tsv
 
 # Diagnostic files
 SITELINKS_URIS    := $(WORK_DIR)/sitelinks_uris.tsv
+PREFLABELS_TSV    := $(WORK_DIR)/preflabels-$(LOCALE).tsv
 DIAG_DIR         := $(OUT_DIR)/diagnostics
 P31_LABELS_TSV   := $(DIAG_DIR)/P31_labels.tsv
 P106_LABELS_TSV  := $(DIAG_DIR)/P106_labels.tsv
 UNUSED_TSV       := $(DIAG_DIR)/unused.tsv
 UNUSED_LABELS_TSV := $(DIAG_DIR)/unused_labels.tsv
+DIAG_SUMMARY     := $(DIAG_DIR)/summary.tsv
 
 # SKOS files
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
@@ -104,11 +106,11 @@ fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) \
 
-stats:		$(OUT_DIR)/stats.tsv
+stats:		$(OUT_DIR)/stats.tsv diagnostics
 
 sankey:		$(OUT_DIR)/sankey.txt
 
-diagnostics:	$(P31_LABELS_TSV) $(P106_LABELS_TSV) $(UNUSED_LABELS_TSV)
+diagnostics:	$(P31_LABELS_TSV) $(P106_LABELS_TSV) $(UNUSED_LABELS_TSV) $(DIAG_SUMMARY)
 
 # Annif targets
 annif:		config load train
@@ -216,27 +218,32 @@ endef
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
 
-# Reusable frequency-with-labels generator: $(1)=property NT $(2)=output TSV
-# Counts object-URI frequencies of a property, then joins localized prefLabels
+# Reusable URI-to-label lookup (uri<TAB>prefLabel), keyed for LC_ALL=C join
+$(PREFLABELS_TSV): $(SKOS_LABELS_NT)
+	rg -F -e 'prefLabel' $< \
+		| awk -v OFS='\t' '{label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, label}' \
+		| LC_ALL=C sort -u -k1,1 > $@
+
+# Reusable frequency-with-labels generator: $(1)=output TSV $(2)=property
+# Counts object-URI frequencies of a property, then attaches prefLabels via outer
+# join; objects without a label are kept with an empty label column
 define generate_prop_labels
-	rg -F -e '/prop/direct/$(3)>' $(WIKIDATA_NT) \
+	rg -F -e '/prop/direct/$(2)>' $(WIKIDATA_NT) \
 		| awk '{print $$3}' \
 		| sort | uniq -c \
-		| awk '{print $$2 "\t" $$1}' \
-		| sort -t$$'\t' -k2 -nr > $(4) ; \
-	rg -F -e 'prefLabel' $(SKOS_LABELS_NT) \
-		| awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' $(4) - \
-		| sort -k2 -nr > $(1) ; \
-	rm -f $(4)
+		| awk -v OFS='\t' '{print $$2, $$1}' \
+		| LC_ALL=C sort -u -k1,1 \
+		| LC_ALL=C join -t$$'\t' -a1 -e '' -o '0,1.2,2.2' - $(PREFLABELS_TSV) \
+		| sort -t$$'\t' -k2,2nr > $(1)
 endef
 
 # Diagnostics: instance_of (P31) object frequency with labels
-$(P31_LABELS_TSV): $(WIKIDATA_NT) $(SKOS_LABELS_NT) | $(DIAG_DIR)
-	$(call generate_prop_labels,$@,$(WIKIDATA_NT),P31,$(DIAG_DIR)/P31_sorted.tsv)
+$(P31_LABELS_TSV): $(WIKIDATA_NT) $(PREFLABELS_TSV) | $(DIAG_DIR)
+	$(call generate_prop_labels,$@,P31)
 
 # Diagnostics: occupation (P106) object frequency with labels
-$(P106_LABELS_TSV): $(WIKIDATA_NT) $(SKOS_LABELS_NT) | $(DIAG_DIR)
-	$(call generate_prop_labels,$@,$(WIKIDATA_NT),P106,$(DIAG_DIR)/P106_sorted.tsv)
+$(P106_LABELS_TSV): $(WIKIDATA_NT) $(PREFLABELS_TSV) | $(DIAG_DIR)
+	$(call generate_prop_labels,$@,P106)
 
 # Diagnostics: sitelink URIs not claimed by any vocab (core / class / occupation)
 $(UNUSED_TSV): $(SITELINKS_URIS) $(WORK_DIR)/core.tsv $(WORK_DIR)/class $(WORK_DIR)/occupation | $(DIAG_DIR)
@@ -244,11 +251,26 @@ $(UNUSED_TSV): $(SITELINKS_URIS) $(WORK_DIR)/core.tsv $(WORK_DIR)/class $(WORK_D
 		| LC_ALL=C sort -u \
 		| LC_ALL=C join -v 1 $(SITELINKS_URIS) - > $@
 
-# Diagnostics: unused URIs with labels
-$(UNUSED_LABELS_TSV): $(UNUSED_TSV) $(SKOS_LABELS_NT) | $(DIAG_DIR)
-	rg -F -e 'prefLabel' $(SKOS_LABELS_NT) \
-		| awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' $< - \
-		| sort -k2 -nr > $@
+# Diagnostics: unused URIs with labels (kept even if unlabeled)
+$(UNUSED_LABELS_TSV): $(UNUSED_TSV) $(PREFLABELS_TSV) | $(DIAG_DIR)
+	LC_ALL=C join -t$$'\t' -a1 -e '' -o '0,2.2' $< $(PREFLABELS_TSV) \
+		| awk -v OFS='\t' '{print $$1, $$2}' > $@
+
+# Diagnostics: reconciliation summary (total / covered / missing)
+# P31/P106 rows: labeled vs unlabeled objects; sitelinks row: claimed vs unused URIs
+$(DIAG_SUMMARY): $(P31_LABELS_TSV) $(P106_LABELS_TSV) $(UNUSED_LABELS_TSV) $(UNUSED_TSV) $(SITELINKS_URIS)
+	@{ \
+		echo -e "group\ttotal\tcovered\tmissing"; \
+		for p in P31 P106; do \
+			f=$(DIAG_DIR)/$$p"_labels.tsv"; \
+			total=$$(wc -l < "$$f"); \
+			covered=$$(awk -F'\t' '$$3 != ""' "$$f" | wc -l); \
+			echo -e "$$p\t$$total\t$$covered\t$$(($$total-$$covered))"; \
+		done; \
+		total=$$(wc -l < $(SITELINKS_URIS)); \
+		missing=$$(wc -l < $(UNUSED_TSV)); \
+		echo -e "sitelinks\t$$total\t$$(($$total-$$missing))\t$$missing"; \
+	} > $@
 
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv | $(PROPS_P31_NT) $(WORK_DIR)/class
