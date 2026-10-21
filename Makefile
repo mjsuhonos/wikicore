@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train eval optimize compress decompress stats sankey
+.PHONY: default data vocab fulltext annif config load train eval optimize compress decompress stats sankey diagnostics
 
 # Options
 LOCALE    ?= en
@@ -26,6 +26,14 @@ WIKIPEDIA_BZ     := $(SOURCE_DIR)/enwiki-20260801-pages-articles.xml.bz2
 SITELINKS_MAP    := $(WORK_DIR)/enwiki_sitelinks.tsv
 WIKIDATA_NT      := $(WORK_DIR)/enwiki_wikidata.nt
 WIKIPEDIA_TSV    := $(WORK_DIR)/enwiki_corpus.tsv
+
+# Diagnostic files
+SITELINKS_URIS    := $(WORK_DIR)/sitelinks_uris.tsv
+DIAG_DIR         := $(OUT_DIR)/diagnostics
+P31_LABELS_TSV   := $(DIAG_DIR)/P31_labels.tsv
+P106_LABELS_TSV  := $(DIAG_DIR)/P106_labels.tsv
+UNUSED_TSV       := $(DIAG_DIR)/unused.tsv
+UNUSED_LABELS_TSV := $(DIAG_DIR)/unused_labels.tsv
 
 # SKOS files
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
@@ -61,6 +69,7 @@ default:
 	@echo "	vocab		Generate Wikidata SKOS vocabs (.nt)"
 	@echo "	fulltext	Generate JSONL text splits (.jsonl)"
 	@echo "	stats		Generate statistics (.tsv)"
+	@echo "	diagnostics	Generate pipeline diagnostics (.tsv)"
 	@echo "	sankey		Generate Sankey diagram data (.txt)"
 	@echo ""
 	@echo "annif"
@@ -83,7 +92,7 @@ default:
 
 # Data targets
 #    Time: 2h on M4/10
-data:		vocab fulltext stats sankey
+data:		vocab fulltext stats sankey diagnostics
 			@echo "  LOCALE=$(LOCALE)"
 			@echo "  RUN_DATE=$(RUN_DATE)"
 
@@ -98,6 +107,8 @@ fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 stats:		$(OUT_DIR)/stats.tsv
 
 sankey:		$(OUT_DIR)/sankey.txt
+
+diagnostics:	$(P31_LABELS_TSV) $(P106_LABELS_TSV) $(UNUSED_LABELS_TSV)
 
 # Annif targets
 annif:		config load train
@@ -151,6 +162,10 @@ $(SITELINKS_MAP): $(WIKIDATA_GZ) | $(WORK_DIR)
 		| awk '{print $$3 "\t" $$1}' \
 		> $@
 
+# 1b. Sorted unique Wikidata URIs having sitelinks (for diagnostics)
+$(SITELINKS_URIS): $(SITELINKS_MAP)
+	cut -f1 $< | LC_ALL=C sort -u > $@
+
 # 2. Extract N-triples with subject URIs having sitelinks (25M)
 #    Time: 23 min on M4/10
 $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(SITELINKS_MAP)
@@ -200,6 +215,40 @@ endef
 # Generate URI lists for each concept (non-instance)
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
+
+# Reusable frequency-with-labels generator: $(1)=property NT $(2)=output TSV
+# Counts object-URI frequencies of a property, then joins localized prefLabels
+define generate_prop_labels
+	rg -F -e '/prop/direct/$(3)>' $(WIKIDATA_NT) \
+		| awk '{print $$3}' \
+		| sort | uniq -c \
+		| awk '{print $$2 "\t" $$1}' \
+		| sort -t$$'\t' -k2 -nr > $(4) ; \
+	rg -F -e 'prefLabel' $(SKOS_LABELS_NT) \
+		| awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' $(4) - \
+		| sort -k2 -nr > $(1) ; \
+	rm -f $(4)
+endef
+
+# Diagnostics: instance_of (P31) object frequency with labels
+$(P31_LABELS_TSV): $(WIKIDATA_NT) $(SKOS_LABELS_NT) | $(DIAG_DIR)
+	$(call generate_prop_labels,$@,$(WIKIDATA_NT),P31,$(DIAG_DIR)/P31_sorted.tsv)
+
+# Diagnostics: occupation (P106) object frequency with labels
+$(P106_LABELS_TSV): $(WIKIDATA_NT) $(SKOS_LABELS_NT) | $(DIAG_DIR)
+	$(call generate_prop_labels,$@,$(WIKIDATA_NT),P106,$(DIAG_DIR)/P106_sorted.tsv)
+
+# Diagnostics: sitelink URIs not claimed by any vocab (core / class / occupation)
+$(UNUSED_TSV): $(SITELINKS_URIS) $(WORK_DIR)/core.tsv $(WORK_DIR)/class $(WORK_DIR)/occupation | $(DIAG_DIR)
+	cat $(WORK_DIR)/core.tsv $(WORK_DIR)/class/*.tsv $(WORK_DIR)/occupation/*.tsv \
+		| LC_ALL=C sort -u \
+		| LC_ALL=C join -v 1 $(SITELINKS_URIS) - > $@
+
+# Diagnostics: unused URIs with labels
+$(UNUSED_LABELS_TSV): $(UNUSED_TSV) $(SKOS_LABELS_NT) | $(DIAG_DIR)
+	rg -F -e 'prefLabel' $(SKOS_LABELS_NT) \
+		| awk 'NR==FNR {count[$$1]=$$2; next} ($$1 in count) {label=""; for(i=3; i<=NF-1; i++) label=label $$i " "; print $$1, count[$$1], label}' $< - \
+		| sort -k2 -nr > $@
 
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv | $(PROPS_P31_NT) $(WORK_DIR)/class
@@ -397,5 +446,5 @@ $(WORK_DIR) $(WORK_DIR)/class $(WORK_DIR)/occupation \
 $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation \
 $(OUT_VOCAB) $(OUT_VOCAB)/class $(OUT_VOCAB)/occupation \
 $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation \
-$(ANNIF_PROJECTS) $(ANNIF_EVAL):
+$(ANNIF_PROJECTS) $(ANNIF_EVAL) $(DIAG_DIR):
 	mkdir -p $@
