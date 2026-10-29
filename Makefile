@@ -164,9 +164,9 @@ $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(SITELINKS_MAP)
 $(WIKIPEDIA_TSV): $(WIKIPEDIA_BZ) $(SITELINKS_MAP)
 	lbunzip2 -dc $(WIKIPEDIA_BZ) | python3 wiki2jsonl.py $(SITELINKS_MAP)| LC_ALL=C sort -u > $@
 
-# 4a. Extract localized labels (~14M English)
+# 4a. Extract localized SKOS labels (~11M English)
 $(SKOS_LABELS_NT): $(WIKIDATA_NT)
-	sed 's/@mul/@$(LOCALE)/g' $< | sed 's/altLabel/hidden/g' | LC_ALL=C sort -u > $@
+	rg -F -e 'skos/core#' $< | sed 's/@mul/@$(LOCALE)/g' | sed 's/altLabel/hiddenLabel/g' | LC_ALL=C sort -u > $@
 
 # 4b. Extract subclass_of (core) properties (~428K)
 $(PROPS_P279_NT): $(WIKIDATA_NT)
@@ -198,8 +198,8 @@ define generate_skos_nt
 endef
 
 # Generate URI lists for each concept (non-instance)
-$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT)
-	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) > $@
+$(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT) $(PROPS_P106_NT)
+	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) | LC_ALL=C join -v 1 - $(PROPS_P106_NT) > $@
 
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv | $(PROPS_P31_NT) $(WORK_DIR)/class
@@ -279,6 +279,7 @@ define generate_project
 		echo "analyzer = snowball(english)"; \
 		echo "limit = 20"; \
 		echo "threshold = 0"; \
+		echo "use_hidden_labels = true"; \
 		echo "vocab = $$vocab"; \
 		echo "# vocab = $$alt"; \
 		echo "# Vocab size: $$(wc -l < $(1))"; \
