@@ -8,3 +8,9 @@ annif-venv
 */data/projects
 */fulltext/**/*.tsv
 */projects.d/.*
+wikicore-20261014-en/fulltext/all-eval.jsonl.gz
+wikicore-20261014-en/fulltext/all-test.jsonl.gz
+wikicore-20261014-en/fulltext/class-eval.jsonl.gz
+wikicore-20261014-en/fulltext/class-test.jsonl.gz
+wikicore-20261014-en/fulltext/occupation-eval.jsonl.gz
+wikicore-20261014-en/fulltext/occupation-test.jsonl.gz
