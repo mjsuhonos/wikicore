@@ -36,6 +36,9 @@ DEFAULT_NUM_WORKERS = 4 #round(os.cpu_count() * 3 / 4)
 DEFAULT_BATCH_SIZE = 10000
 DEFAULT_MAX_BATCHES = None  # Process all batches by default
 FILTERED_OUTPUT_FILE = 'unmapped.jsonl'
+# Link-paragraph QIDs are added to subjects as bare URIs when enabled; off
+# preserves the historical one-subject-per-document behaviour
+LINK_SUBJECTS = False
 
 # Maximum text size to keep (in characters) - truncate intro to this length
 MAX_TEXT_SIZE = 10000
@@ -360,6 +363,7 @@ def page_data_to_jsonl(page_data, title_to_qid):
 
     rendered_paragraphs = []
     metadata_links = {}
+    linked_qids = {}  # ordered set: QIDs mentioned in the text, first-appearance order
 
     for para_num, para_text in enumerate(paragraph_texts, 1):
         text, links = render_paragraph_text(para_text)
@@ -378,6 +382,7 @@ def page_data_to_jsonl(page_data, title_to_qid):
             qid = title_to_qid.get(link_title, "")
             if qid:
                 qids.append(qid)
+                linked_qids[qid] = None
 
         if qids:
             metadata_links[str(para_num)] = ",".join(qids)
@@ -409,6 +414,12 @@ def page_data_to_jsonl(page_data, title_to_qid):
     label = page_title.replace("_", " ")
     document_id = page_qid
     subjects = [{"uri": wikidata_uri, "label": label}]
+    # Optionally enrich gold labels with the concepts mentioned in the text,
+    # converted to Wikidata URIs (no labels known here). Keeps metadata's bare
+    # QIDs unchanged; kway_merge_sorted_files only reads subjects[0], so the
+    # corpus TSV key and all downstream joins are unaffected.
+    if LINK_SUBJECTS:
+        subjects.extend({"uri": WIKIDATA_BASE + qid} for qid in linked_qids if qid != page_qid)
 
     return {
         "document_id": document_id,
@@ -532,14 +543,15 @@ def process_batch_wrapper(args):
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES, filtered_output_file=FILTERED_OUTPUT_FILE):
+def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES, filtered_output_file=FILTERED_OUTPUT_FILE, link_subjects=False):
     """Process dump in parallel with multiple workers.
-    
+
     Uses GLOBAL_TITLE_TO_QID with fork's copy-on-write to avoid pickling
     the large mapping to each worker for every batch.
     """
-    global GLOBAL_TITLE_TO_QID
+    global GLOBAL_TITLE_TO_QID, LINK_SUBJECTS
     GLOBAL_TITLE_TO_QID = title_to_qid
+    LINK_SUBJECTS = link_subjects
     
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_files = [
@@ -590,6 +602,7 @@ def main():
     sitelinks_path = args[0] if args else None
     language = args[1] if len(args) > 1 else 'en'
     filtered_output_file = args[2] if len(args) > 2 else FILTERED_OUTPUT_FILE
+    link_subjects = args[3].lower() not in ('false', 'no', '0', '') if len(args) > 3 else LINK_SUBJECTS
 
     # Set the Wikipedia URL base for the language edition being processed
     global WIKIPEDIA_BASE, WIKIPEDIA_BASE_LEN
@@ -606,7 +619,8 @@ def main():
             num_workers=num_workers,
             batch_size=batch_size,
             max_batches=max_batches,
-            filtered_output_file=filtered_output_file
+            filtered_output_file=filtered_output_file,
+            link_subjects=link_subjects
         )
     finally:
         pass

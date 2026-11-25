@@ -9,11 +9,17 @@ LOCALE    ?= en
 # when no $(LOCALE) document exists (they stay untrained). Set to empty to disable:
 #   make data LOCALE=fr FALLBACK_LOCALE=
 FALLBACK_LOCALE ?= en
+# Add paragraph-link QIDs to each document's subjects array as bare Wikidata
+# URIs (no labels) — cross-subject gold labels for vocab concepts mentioned in
+# the text. Off by default: orthogonal to the vocab itself. Set to true to
+# enrich training data; concepts without $(LOCALE) sitelinks stay untrained.
+LINK_SUBJECTS ?= false
 BACKEND   ?= mllm
 RUN_DATE  ?= $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
 # Union of locales to scan for sitelinks; sort dedupes when FALLBACK == LOCALE
-SITE_LOCALES := $(if $(FALLBACK_LOCALE),$(sort $(FALLBACK_LOCALE) $(LOCALE)),$(LOCALE))
+space := $(empty) $(empty)
+SITE_LOCALES := $(if $(FALLBACK_LOCALE),$(subst $(space),|,$(sort $(FALLBACK_LOCALE) $(LOCALE))),$(LOCALE))
 # Published Content File Export to use: the 1st of the RUN_DATE month, so a
 # RUN_DATE mid-month points at an export that may not be published yet
 # (published ~7 days after the 1st). Override to pin one, eg.:
@@ -74,6 +80,10 @@ CORPUS_PARTS     := $(patsubst $(WIKIPEDIA_DIR)/%.xml.bz2,$(WORK_CORPUS)/%.tsv,$
 
 # SKOS files
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
+# Non-$(LOCALE) labels (FALLBACK_LOCALE etc.) for uncovered concepts: matched
+# against $(LOCALE) text by the zero-shot project via use_hidden_labels
+# (YAKE matches on label strings + analyzer stems; the language tag is ignored)
+FALLBACK_LABELS_NT := $(WORK_DIR)/wikicore-skos-labels-fallback-$(LOCALE).nt
 PROPS_P31_NT     := $(WORK_DIR)/wikicore-P31.nt
 PROPS_P106_NT    := $(WORK_DIR)/wikicore-P106.nt
 PROPS_P279_NT    := $(WORK_DIR)/wikicore-P279.nt
@@ -125,6 +135,7 @@ default:
 	@echo "	LOCALE		Default '$(LOCALE)'"
 	@echo "	EXPORT_DATE	Default '$(WIKIPEDIA_DATE)'"
 	@echo "	FALLBACK_LOCALE	Default '$(FALLBACK_LOCALE)' (empty disables union vocab)"
+	@echo "	LINK_SUBJECTS	Default '$(LINK_SUBJECTS)' (paragraph links as gold URIs)"
 	@echo "	BACKEND		Default 'mllm'"
 	@echo "	ANNIF		Default '$(ANNIF)'"
 	@echo ""
@@ -137,7 +148,8 @@ data:		vocab fulltext stats sankey
 
 vocab:		$(OUT_VOCAB)/core.nt \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_VOCAB)/class/%.nt,$(CLASS_FILES)) \
-			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES))
+			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_VOCAB)/occupation/%.nt,$(OCCUPATION_FILES)) \
+			$(OUT_VOCAB)/uncovered.nt
 
 fulltext: 	$(OUT_FULLTEXT)/core.jsonl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
@@ -154,16 +166,21 @@ annif:		config load train
 			@echo "  BACKEND=$(BACKEND)"
 
 config:		$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_core.cfg \
+			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_uncovered.cfg \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_class_%.cfg,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%.cfg,$(OCCUPATION_FILES)) \
 			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_ensemble_class.cfg \
 			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_ensemble_occupation.cfg \
 			$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_ensemble_all.cfg \
 
+# NB: no uncovered project here — it is zero-shot (yake: keyphrase matching,
+# no document training); a future ensemble over it may need train/eval/optimize
+# rules (doc-hungry backends would retrain the loaded uncovered vocab)
 # TODO: load does not include occupation / class / all
 # NB: "annif load" uses > 30GB of RAM for parsing the full RDF of 'all'
 # this is required (eg. as opposed to combining CSV) to maintain skos:inScheme triples
 load:		$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl \
+			$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-uncovered-$(LOCALE)/subjects.ttl \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-occupation-%-$(LOCALE)/subjects.ttl,$(OCCUPATION_FILES)) \
 
@@ -217,10 +234,11 @@ $(SITELINKS_MAP): $(UNION_SITELINKS)
 	awk -F'\t' '$$2 ~ /^<https:\/\/$(LOCALE)\.wikipedia\.org\//' $< > $@
 
 # 2. Extract N-triples with subject URIs having en|fr sitelinks (25M)
+#    NB: keeps skos labels in ALL site locales (en labels for uncovered topics)
 #    Time: 23 min on M4/10
 $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(UNION_SITELINKS)
 	pigz -dc $< \
-		| rg -e '/prop/direct/(P31|P279|P361|P106)>|skos/core#.*"@(mul|$(LOCALE)) \.' \
+		| rg -e '/prop/direct/(P31|P279|P361|P106)>|skos/core#.*"@($(SITE_LOCALES)|mul) \.' \
 		| awk -v sf=$(UNION_SITELINKS) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		> $@
 
@@ -229,7 +247,7 @@ $(WIKIDATA_NT): $(WIKIDATA_GZ) | $(UNION_SITELINKS)
 #    then merge with a single sorted pass (sort -u) and dedupe by document URI
 #    Time: 1h 30min on M4/10 for full enwiki
 $(WORK_CORPUS)/%.tsv: $(WIKIPEDIA_DIR)/%.xml.bz2 $(SITELINKS_MAP) | $(WORK_CORPUS)
-	lbzip2 -dc $< | python3 wiki2jsonl.py $(SITELINKS_MAP) $(LOCALE) $(WORK_CORPUS)/$*-unmapped.jsonl > $@
+	lbzip2 -dc $< | python3 wiki2jsonl.py $(SITELINKS_MAP) $(LOCALE) $(WORK_CORPUS)/$*-unmapped.jsonl $(LINK_SUBJECTS) > $@
 
 $(WIKIPEDIA_TSV): $(WIKIPEDIA_STAMP) $(CORPUS_PARTS)
 	@test -n "$(CORPUS_PARTS)" \
@@ -248,8 +266,15 @@ $(WIKIPEDIA_STAMP): $(WIKIPEDIA_DIR)/SHA256SUMS
 	cd $(WIKIPEDIA_DIR) && $(SHASUM) $(SHASUM_OPT) --check SHA256SUMS && touch $@
 
 # 4a. Extract localized SKOS labels (~11M English)
+#     NB: $(LOCALE)+mul ONLY — site-fallback labels are kept in separate file
+#     below so the open vocabs stay $(LOCALE)-labelled
 $(SKOS_LABELS_NT): $(WIKIDATA_NT)
-	rg -F -e 'skos/core#' $< | sed 's/@mul/@$(LOCALE)/g' | sed 's/altLabel/hiddenLabel/g' | LC_ALL=C sort -u > $@
+	rg -F -e 'skos/core#' $< | rg "@($(LOCALE)|mul) \." | sed 's/@mul/@$(LOCALE)/g' | sed 's/altLabel/hiddenLabel/g' | LC_ALL=C sort -u > $@
+
+# 4a-bis. Extract foreign-language SKOS labels (site-fallback topics only, as
+#     hidden labels; consumed by vocab/uncovered.nt for the zero-shot project)
+$(FALLBACK_LABELS_NT): $(WIKIDATA_NT)
+	rg -F -e 'skos/core#' $< | rg -v "@($(LOCALE)|mul) \." | sed 's/core#prefLabel/core#hiddenLabel/g; s/altLabel/hiddenLabel/g' | LC_ALL=C sort -u > $@
 
 # 4b. Extract subclass_of (core) properties (~428K)
 $(PROPS_P279_NT): $(WIKIDATA_NT)
@@ -284,6 +309,15 @@ endef
 $(WORK_DIR)/core.tsv: $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(PROPS_P31_NT) $(PROPS_P106_NT)
 	cat $(PROPS_P279_NT) $(PROPS_P361_NT) | awk '{print $$1}' | LC_ALL=C sort -u | LC_ALL=C join -v 1 - $(PROPS_P31_NT) | LC_ALL=C join -v 1 - $(PROPS_P106_NT) > $@
 
+# Uncovered concepts: the FALLBACK_LOCALE (union) delta — concepts in the
+# core/class/occupation lists that have NO $(LOCALE) sitelink, so no $(LOCALE)
+# document can be gold-labelled for them. Kept as a separate vocabulary for a
+# zero-shot backend (eg. mllm); unloadable/trained/evaluated independently.
+$(WORK_DIR)/uncovered.tsv: $(WORK_DIR)/core.tsv $(WORK_DIR)/class $(WORK_DIR)/occupation $(SITELINKS_MAP) | $(WORK_DIR)
+	cat $(WORK_DIR)/core.tsv $(WORK_DIR)/class/*.tsv $(WORK_DIR)/occupation/*.tsv \
+		| LC_ALL=C sort -u \
+		| LC_ALL=C join -v 1 - <(LC_ALL=C sort $(SITELINKS_MAP)) > $@
+
 # Generate URI lists for each class
 $(WORK_DIR)/class/%.tsv: $(ROOT_DIR)/class/%.tsv | $(PROPS_P31_NT) $(WORK_DIR)/class
 	awk '{print $$1}' "$<" | xargs -I{} rg -F "{}> ." $(PROPS_P31_NT) | awk '{print $$1}' | LC_ALL=C sort -u > $@
@@ -303,6 +337,12 @@ $(OUT_VOCAB)/class/%.nt: $(WORK_DIR)/class/%.tsv | $(OUT_VOCAB)/class $(SKOS_LAB
 # Make SKOS output for each occupation
 $(OUT_VOCAB)/occupation/%.nt: $(WORK_DIR)/occupation/%.tsv | $(OUT_VOCAB)/occupation $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT)
 	$(call generate_skos_nt,$<,$@,occupation)
+
+# Make SKOS output for uncovered (zero-shot) concepts, flat scheme like core;
+# then append foreign-language labels (en etc.) as hidden labels
+$(OUT_VOCAB)/uncovered.nt: $(WORK_DIR)/uncovered.tsv | $(OUT_VOCAB) $(SKOS_LABELS_NT) $(PROPS_P279_NT) $(PROPS_P361_NT) $(FALLBACK_LABELS_NT)
+	$(call generate_skos_nt,$<,$@)
+	LC_ALL=C join $< $(FALLBACK_LABELS_NT) >> $@
 
 # Reusable JSONL split generator
 define split_jsonl
@@ -348,16 +388,24 @@ define generate_project
 		desc="WikiCore $(BACKEND) core"; \
 		vocab=wikicore-$(RUN_DATE)-core-$(LOCALE); \
 		alt="wikicore-$(RUN_DATE)-core-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/core)"; \
+		be=$(BACKEND); \
+	elif [ "$(2)" = "uncovered" ]; then \
+		proj=wikicore_$(LOCALE)_$(BACKEND)_uncovered; \
+		desc="WikiCore uncovered ($(FALLBACK_LOCALE) fallback, zero-shot)"; \
+		vocab=wikicore-$(RUN_DATE)-uncovered-$(LOCALE); \
+		alt="wikicore-$(RUN_DATE)-uncovered-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/uncovered)"; \
+		be=yake; \
 	else \
 		proj=wikicore_$(LOCALE)_$(BACKEND)_$(2)_$$subdir; \
 		desc="WikiCore $(BACKEND) $(2) $$subdir"; \
 		vocab=wikicore-$(RUN_DATE)-$(2)-$$subdir-$(LOCALE); \
 		alt="wikicore-$(RUN_DATE)-$(2)-$(LOCALE)(exclude=*,include_scheme=$(VOCAB_URI)/$(2)/$$subdir)"; \
+		be=$(BACKEND); \
 	fi; \
 	{ \
 		echo "[$$proj]"; \
 		echo "name = $$desc ($(LOCALE))"; \
-		echo "backend = $(BACKEND)"; \
+		echo "backend = $$be"; \
 		echo "language = $(LOCALE)"; \
 		echo "analyzer = snowball($(LOCALE))"; \
 		echo "limit = 20"; \
@@ -385,6 +433,9 @@ endef
 # One config file per project: <project_id>.cfg
 $(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_core.cfg: $(WORK_DIR)/core.tsv | $(ANNIF_PROJECTS)
 	$(call generate_project,$<,core,$@)
+
+$(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_uncovered.cfg: $(WORK_DIR)/uncovered.tsv | $(ANNIF_PROJECTS)
+	$(call generate_project,$<,uncovered,$@)
 
 $(ANNIF_PROJECTS)/wikicore_$(LOCALE)_$(BACKEND)_class_%.cfg: $(WORK_DIR)/class/%.tsv | $(ANNIF_PROJECTS)
 	$(call generate_project,$<,class,$@)
@@ -439,6 +490,13 @@ endef
 
 # Loaded vocabs: $(ANNIF_VOCABS)/<vocab_id>/subjects.ttl
 $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-core-$(LOCALE)/subjects.ttl: $(OUT_VOCAB)/core.nt | $(ANNIF_PROJECTS)
+	$(call annif_load)
+
+# Uncovered (zero-shot) vocab: concepts with an en-sitelink but no $(LOCALE)
+# sitelink => no $(LOCALE) documents can ever label them, so there is no train
+# rule; mllm is a lexical matcher and needs no training. Reload manually if the
+# future ensemble opts for a  doc-hungry backend.
+$(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-uncovered-$(LOCALE)/subjects.ttl: $(OUT_VOCAB)/uncovered.nt | $(ANNIF_PROJECTS)
 	$(call annif_load)
 
 $(ANNIF_VOCABS)/wikicore-$(RUN_DATE)-class-%-$(LOCALE)/subjects.ttl: $(OUT_VOCAB)/class/%.nt | $(ANNIF_PROJECTS)
