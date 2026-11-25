@@ -532,7 +532,7 @@ def process_batch_wrapper(args):
     return (batch_index, valid_count, filtered_count)
 
 
-def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES):
+def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_BATCH_SIZE, max_batches=DEFAULT_MAX_BATCHES, filtered_output_file=FILTERED_OUTPUT_FILE):
     """Process dump in parallel with multiple workers.
     
     Uses GLOBAL_TITLE_TO_QID with fork's copy-on-write to avoid pickling
@@ -576,8 +576,8 @@ def process_dump_parallel(stream, title_to_qid, num_workers, batch_size=DEFAULT_
         # Merge and output valid results
         kway_merge_sorted_files(temp_files, sys.stdout)
         
-        # Write filtered results to hardcoded file
-        with open(FILTERED_OUTPUT_FILE, 'w', encoding='utf-8') as filtered_out:
+        # Write filtered results
+        with open(filtered_output_file, 'w', encoding='utf-8') as filtered_out:
             kway_merge_sorted_files(filtered_temp_files, filtered_out)
 
 
@@ -588,6 +588,13 @@ def main():
 
     args = sys.argv[1:]
     sitelinks_path = args[0] if args else None
+    language = args[1] if len(args) > 1 else 'en'
+    filtered_output_file = args[2] if len(args) > 2 else FILTERED_OUTPUT_FILE
+
+    # Set the Wikipedia URL base for the language edition being processed
+    global WIKIPEDIA_BASE, WIKIPEDIA_BASE_LEN
+    WIKIPEDIA_BASE = f"https://{language}.wikipedia.org/wiki/"
+    WIKIPEDIA_BASE_LEN = len(WIKIPEDIA_BASE)
 
     title_to_qid = load_sitelinks(sitelinks_path) if sitelinks_path else {}
 
@@ -598,7 +605,8 @@ def main():
             title_to_qid,
             num_workers=num_workers,
             batch_size=batch_size,
-            max_batches=max_batches
+            max_batches=max_batches,
+            filtered_output_file=filtered_output_file
         )
     finally:
         pass

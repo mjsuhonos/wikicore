@@ -1,12 +1,24 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
-.PHONY: default data vocab fulltext annif config load train eval optimize compress decompress stats sankey
+.PHONY: default data download vocab fulltext annif config load train eval optimize compress decompress stats sankey
 
 # Options
 LOCALE    ?= en
+# Cross-lingual vocab fallback: concepts present in the FALLBACK_LOCALE corpus
+# (default en) are kept in the $(LOCALE) vocabulary with their fr/mul labels even
+# when no $(LOCALE) document exists (they stay untrained). Set to empty to disable:
+#   make data LOCALE=fr FALLBACK_LOCALE=
+FALLBACK_LOCALE ?= en
 BACKEND   ?= mllm
 RUN_DATE  ?= $(shell date +%Y%m%d)
 VOCAB_URI := https://wikicore.ca/$(RUN_DATE)
+# Union of locales to scan for sitelinks; sort dedupes when FALLBACK == LOCALE
+SITE_LOCALES := $(if $(FALLBACK_LOCALE),$(sort $(FALLBACK_LOCALE) $(LOCALE)),$(LOCALE))
+# Published Content File Export to use: the 1st of the RUN_DATE month, so a
+# RUN_DATE mid-month points at an export that may not be published yet
+# (published ~7 days after the 1st). Override to pin one, eg.:
+#   make download EXPORT_DATE=2026-11-01
+EXPORT_DATE ?= $(shell echo $(RUN_DATE) | awk '{print substr($$0,1,4)"-"substr($$0,5,2)"-01"}')
 
 # Paths
 ROOT_DIR         := $(PWD)
@@ -18,14 +30,47 @@ OCCUPATION_FILES := $(wildcard $(ROOT_DIR)/occupation/*.tsv)
 CLASS_FILES      := $(wildcard $(ROOT_DIR)/class/*.tsv)
 
 # Input dumps
-# NB: very large! Wikidata is >1TB uncompressed, Wikipedia is 110GB uncompressed
-WIKIDATA_GZ      := $(SOURCE_DIR)/wikidata-20260824-all-BETA.nt.gz
-WIKIPEDIA_BZ     := $(SOURCE_DIR)/enwiki-20260801-pages-articles.xml.bz2
+# NB: very large! A full Wikidata RDF dump (latest-all.nt.gz) is >1TB uncompressed
+# and must be downloaded & placed in $(SOURCE_DIR) manually; override the path here:
+#   make data LOCALE=fr WIKIDATA_GZ=$(SOURCE_DIR)/wikidata-<date>-all.nt.gz
+# NB: truthy dumps (wikidata-<date>-truthy-BETA.nt.gz) contain NO Wikipedia
+# sitelinks and will yield an empty sitelinks map / corpus.
+WIKIDATA_GZ      ?= $(SOURCE_DIR)/wikidata-20260824-all-BETA.nt.gz
+
+# Wikipedia dumps: new-style MediaWiki Content File Exports, one *directory* of
+# standalone part XML files per wiki & date (legacy single-file dumps sunset 2027-01):
+#   https://dumps.wikimedia.org/other/mediawiki_content_current/<wiki_id>/<date>/xml/bzip2/
+# The directory name (<wiki_id>-<date>, eg. frwiki-2026-11-01) resolves both the URI
+# and the download target. 'make download' fetches SHA256SUMS, then all parts
+# (resumable), then verifies; see the .complete stamp rule below. You can also wget
+# the parts yourself and run 'make download' afterwards to verify the export.
+# Exports now live one directory PER LANGUAGE ($(SOURCE_DIR)/<LOCALE>/, eg. fr/),
+# with the export date inside as files; <wiki_id>-<date> names keep working while
+# older in-flight exports exist.
+WIKIPEDIA_HOST    := https://dumps.wikimedia.org
+# Wikipedia wiki_id: <LOCALE>wiki (eg. frwiki); LOCALE stays separate from RUN_DATE
+WIKIPEDIA_WIKI_ID ?= $(LOCALE)wiki
+WIKIPEDIA_DATE    := $(EXPORT_DATE)
+WIKIPEDIA_URI     := $(WIKIPEDIA_HOST)/other/mediawiki_content_current/$(WIKIPEDIA_WIKI_ID)/$(WIKIPEDIA_DATE)/xml/bzip2
+WIKIPEDIA_DIR     := $(firstword $(wildcard $(SOURCE_DIR)/$(LOCALE) $(SOURCE_DIR)/$(WIKIPEDIA_WIKI_ID)-$(WIKIPEDIA_DATE)))
+ifeq ($(WIKIPEDIA_DIR),)
+WIKIPEDIA_DIR     := $(SOURCE_DIR)/$(LOCALE)
+endif
+WIKIPEDIA_PARTS   := $(wildcard $(WIKIPEDIA_DIR)/*.xml.bz2 $(WIKIPEDIA_DIR)/$(WIKIPEDIA_WIKI_ID)-$(WIKIPEDIA_DATE)-*.xml.bz2)
+WIKIPEDIA_STAMP   := $(WIKIPEDIA_DIR)/.complete
+SHASUM            := $(shell command -v sha256sum || command -v shasum)
+# Apple's sha256sum has no -a option; perl's shasum defaults to SHA-1, so it needs -a 256
+SHASUM_OPT        := $(if $(findstring shasum,$(notdir $(SHASUM))),-a 256,)
 
 # Extracted files
-SITELINKS_MAP    := $(WORK_DIR)/enwiki_sitelinks.tsv
-WIKIDATA_NT      := $(WORK_DIR)/enwiki_wikidata.nt
-WIKIPEDIA_TSV    := $(WORK_DIR)/enwiki_corpus.tsv
+# Union sitelinks map: $(FALLBACK_LOCALE) + $(LOCALE), scanned in one dump pass;
+# $1 = QID URI, $2 = sitelink URL (angle brackets preserved)
+UNION_SITELINKS  := $(WORK_DIR)/wikicore-sitelinks-union.tsv
+SITELINKS_MAP    := $(WORK_DIR)/$(LOCALE)wiki_sitelinks.tsv
+WIKIDATA_NT      := $(WORK_DIR)/$(LOCALE)wiki_wikidata.nt
+WIKIPEDIA_TSV    := $(WORK_DIR)/$(LOCALE)wiki_corpus.tsv
+WORK_CORPUS      := $(WORK_DIR)/$(LOCALE)wiki-parts
+CORPUS_PARTS     := $(patsubst $(WIKIPEDIA_DIR)/%.xml.bz2,$(WORK_CORPUS)/%.tsv,$(WIKIPEDIA_PARTS))
 
 # SKOS files
 SKOS_LABELS_NT   := $(WORK_DIR)/wikicore-skos-labels-$(LOCALE).nt
@@ -70,13 +115,16 @@ default:
 	@echo "optimize		Optimize Annif projects (.tsv)"
 	@echo "eval			Evaluate Annif projects (.json)"
 	@echo ""
+	@echo "download		Fetch & verify the $(LOCALE)wiki export ($(WIKIPEDIA_DATE))"
 	@echo "compress		Compress files for Github (.gz)"
 	@echo "decompress		Extract files from Github"
 	@echo ""
 	@echo "Options:"
 	@echo "	-j N		Number of parallel jobs ('-j' alone means all CPUs)"
 	@echo "	RUN_DATE	Default '$(RUN_DATE)' (eg. YYYYMMDD)"
-	@echo "	LOCALE		Default 'en'"
+	@echo "	LOCALE		Default '$(LOCALE)'"
+	@echo "	EXPORT_DATE	Default '$(WIKIPEDIA_DATE)'"
+	@echo "	FALLBACK_LOCALE	Default '$(FALLBACK_LOCALE)' (empty disables union vocab)"
 	@echo "	BACKEND		Default 'mllm'"
 	@echo "	ANNIF		Default '$(ANNIF)'"
 	@echo ""
@@ -131,7 +179,18 @@ optimize:	$(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_core.tsv \
 			$(patsubst $(ROOT_DIR)/class/%.tsv,$(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_class_%.tsv,$(CLASS_FILES)) \
 			$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%.tsv,$(OCCUPATION_FILES)) \
 
-# GitHub GZip targets
+# Github GZip targets / Dump downloads
+download:
+	@if [ -f $(WIKIPEDIA_STAMP) ]; then \
+		echo "  Export: already verified ($(WIKIPEDIA_STAMP) present); skipping wget"; \
+	else \
+		echo "  Export: $(WIKIPEDIA_URI)"; \
+		mkdir -p $(WIKIPEDIA_DIR); \
+		wget -q -O $(WIKIPEDIA_DIR)/SHA256SUMS $(WIKIPEDIA_URI)/SHA256SUMS; \
+	fi
+	cd $(WIKIPEDIA_DIR) && $(SHASUM) $(SHASUM_OPT) --check SHA256SUMS
+	@if [ -f $(WIKIPEDIA_DIR)/SHA256SUMS ] || [ -f $@ ]; then touch $(WIKIPEDIA_STAMP); fi
+
 compress: $(OUT_VOCAB) $(OUT_FULLTEXT)
 	# Vocabularies
 	find $(OUT_VOCAB) -maxdepth 2 -type f -name "*.nt" -exec pigz -k -f {} \;
@@ -142,27 +201,51 @@ decompress:
 	find $(OUT_DIR) -maxdepth 3 -type f -name "*.gz" -exec pigz -dk -f {} \;
 
 # 1. Extract URIs with Wikipedia sitelinks (10M unfiltered; 7.4M filtered)
+#    Scan once for the union of $(FALLBACK_LOCALE) + $(LOCALE); the union feeds
+#    step 2 (vocab completeness fallback), the $(LOCALE)-only map feeds step 3
+#    (corpus) so document extraction keeps its original semantics
 #    This also filters out structural Wikidata statements
 #    Time: 20 min on M4/10
-$(SITELINKS_MAP): $(WIKIDATA_GZ) | $(WORK_DIR)
+$(UNION_SITELINKS): $(WIKIDATA_GZ) | $(WORK_DIR)
 	pigz -dc $< \
-		| rg "en.wikipedia.org.*?schema.org/about" \
+		| rg "($(SITE_LOCALES)).wikipedia.org.*?schema.org/about" \
 		| rg -v 'wiki/(?:Category|Template|Portal|Wikipedia|Module):|List_of_.+' \
 		| awk '{print $$3 "\t" $$1}' \
 		> $@
 
-# 2. Extract N-triples with subject URIs having sitelinks (25M)
+$(SITELINKS_MAP): $(UNION_SITELINKS)
+	awk -F'\t' '$$2 ~ /^<https:\/\/$(LOCALE)\.wikipedia\.org\//' $< > $@
+
+# 2. Extract N-triples with subject URIs having en|fr sitelinks (25M)
 #    Time: 23 min on M4/10
-$(WIKIDATA_NT): $(WIKIDATA_GZ) | $(SITELINKS_MAP)
+$(WIKIDATA_NT): $(WIKIDATA_GZ) | $(UNION_SITELINKS)
 	pigz -dc $< \
 		| rg -e '/prop/direct/(P31|P279|P361|P106)>|skos/core#.*"@(mul|$(LOCALE)) \.' \
-		| awk -v sf=$(SITELINKS_MAP) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
+		| awk -v sf=$(UNION_SITELINKS) 'BEGIN{while((getline<sf)>0)sl[$$1]=1}{if($$1 in sl)print}' \
 		> $@
 
-# 3. Build JSONL corpus for Wikipedia documents (7.1M)
-#    Time: 1h 30min on M4/10
-$(WIKIPEDIA_TSV): $(WIKIPEDIA_BZ) $(SITELINKS_MAP)
-	lbunzip2 -dc $(WIKIPEDIA_BZ) | python3 wiki2jsonl.py $(SITELINKS_MAP)| LC_ALL=C sort -u > $@
+# 3. Build JSONL corpus for Wikipedia documents (~7.1M pages for en)
+#    New-style part files are self-contained XML exports: process each in parallel,
+#    then merge with a single sorted pass (sort -u) and dedupe by document URI
+#    Time: 1h 30min on M4/10 for full enwiki
+$(WORK_CORPUS)/%.tsv: $(WIKIPEDIA_DIR)/%.xml.bz2 $(SITELINKS_MAP) | $(WORK_CORPUS)
+	lbzip2 -dc $< | python3 wiki2jsonl.py $(SITELINKS_MAP) $(LOCALE) $(WORK_CORPUS)/$*-unmapped.jsonl > $@
+
+$(WIKIPEDIA_TSV): $(WIKIPEDIA_STAMP) $(CORPUS_PARTS)
+	@test -n "$(CORPUS_PARTS)" \
+		|| { echo "No $(LOCALE)wiki part files in $(WIKIPEDIA_DIR); run 'make download'" >&2; exit 1; }
+	@for f in $(notdir $(CORPUS_PARTS)); do \
+		rg -qF "$$f" $(WIKIPEDIA_DIR)/SHA256SUMS \
+			|| { echo "Stray part not in SHA256SUMS: $$f" >&2; exit 1; }; \
+	done
+	cat $(CORPUS_PARTS) | LC_ALL=C sort -u | awk -F'\t' '!seen[$$1]++' > $@
+	@cat $(WORK_CORPUS)/*-unmapped.jsonl 2>/dev/null \
+		> $(WORK_DIR)/$(LOCALE)wiki_unmapped.jsonl \
+		|| touch $(WORK_DIR)/$(LOCALE)wiki_unmapped.jsonl
+
+# Completeness check: every manifest entry must exist and hash-match
+$(WIKIPEDIA_STAMP): $(WIKIPEDIA_DIR)/SHA256SUMS
+	cd $(WIKIPEDIA_DIR) && $(SHASUM) $(SHASUM_OPT) --check SHA256SUMS && touch $@
 
 # 4a. Extract localized SKOS labels (~11M English)
 $(SKOS_LABELS_NT): $(WIKIDATA_NT)
@@ -252,7 +335,7 @@ $(OUT_FULLTEXT)/occupation/%.jsonl: $(WORK_FULLTEXT)/occupation/%.jsonl | $(OUT_
 $(OUT_DIR)/stats.tsv: $(OUT_FULLTEXT)/core.jsonl \
 		$(patsubst $(ROOT_DIR)/class/%.tsv,$(OUT_FULLTEXT)/class/%.jsonl,$(CLASS_FILES)) \
 		$(patsubst $(ROOT_DIR)/occupation/%.tsv,$(OUT_FULLTEXT)/occupation/%.jsonl,$(OCCUPATION_FILES)) | $(OUT_DIR)
-	python3 stats.py $(OUT_DIR) $(SOURCE_DIR) > $@
+	python3 stats.py $(OUT_DIR) $(SOURCE_DIR) $(WORK_DIR)/$(LOCALE)wiki_unmapped.jsonl > $@
 
 $(OUT_DIR)/sankey.txt: $(OUT_DIR)/stats.tsv | $(OUT_DIR)
 	python3 sankey.py $(OUT_DIR) $(SOURCE_DIR) > $@
@@ -276,7 +359,7 @@ define generate_project
 		echo "name = $$desc ($(LOCALE))"; \
 		echo "backend = $(BACKEND)"; \
 		echo "language = $(LOCALE)"; \
-		echo "analyzer = snowball(english)"; \
+		echo "analyzer = snowball($(LOCALE))"; \
 		echo "limit = 20"; \
 		echo "threshold = 0"; \
 		echo "use_hidden_labels = true"; \
@@ -395,8 +478,8 @@ $(ANNIF_EVAL)/wikicore_$(LOCALE)_$(BACKEND)_occupation_%.tsv: $(OUT_FULLTEXT)/oc
 	$(call annif_optimize)
 
 $(WORK_DIR) $(WORK_DIR)/class $(WORK_DIR)/occupation \
-$(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation \
-$(OUT_VOCAB) $(OUT_VOCAB)/class $(OUT_VOCAB)/occupation \
+$(WORK_CORPUS) $(WORK_FULLTEXT) $(WORK_FULLTEXT)/class $(WORK_FULLTEXT)/occupation \
+$(OUT_DIR) $(OUT_VOCAB) $(OUT_VOCAB)/class $(OUT_VOCAB)/occupation \
 $(OUT_FULLTEXT) $(OUT_FULLTEXT)/class $(OUT_FULLTEXT)/occupation \
-$(ANNIF_PROJECTS) $(ANNIF_EVAL):
+$(ANNIF_PROJECTS) $(ANNIF_VOCABS) $(ANNIF_EVAL):
 	mkdir -p $@

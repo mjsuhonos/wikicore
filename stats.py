@@ -232,8 +232,8 @@ def main():
                         print(f"Error parsing JSON in {filepath}: {e}", file=sys.stderr)
                         continue
     
-    # Process unmapped file
-    unmapped_file = os.path.join(source_dir, 'unmapped.jsonl')
+    # Process unmapped file (optional third arg overrides the default location)
+    unmapped_file = sys.argv[3] if len(sys.argv) > 3 else os.path.join(source_dir, 'unmapped.jsonl')
     unmapped_docs = process_unmapped(unmapped_file)
     
     # Aggregate statistics
